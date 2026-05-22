@@ -1,0 +1,25 @@
+# Credenciais
+config/
+
+# Ambiente virtual
+pulse/
+
+# Cache Python
+__pycache__/
+*.pyc
+*.pyo
+settings.local.json
+settings.json
+
+# Arquivos de runtime gerados automaticamente
+.pulse_cache.json
+.pulse_genres_flag.json
+.cache
+src/.cache
+
+# Crash dumps
+*.stackdump
+
+# Local apenas
+notebooks/
+docs/notes.md
