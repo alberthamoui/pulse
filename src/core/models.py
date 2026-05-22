@@ -28,6 +28,7 @@ class PlaylistProfile:
     artista_weights: Dict[str, float]  # { id_artista: peso_relativo }
     genre_weights: Dict[str, float] = field(default_factory=dict)  # { genre: peso_relativo }
     total_tracks: int = 0
+    track_ids: list = field(default_factory=list)
 
     def __repr__(self) -> str:
         return f"PlaylistProfile(nome={self.nome!r}, artistas={len(self.artista_weights)}, genres={len(self.genre_weights)})"
@@ -40,7 +41,8 @@ class MatchResult:
     playlist_name: str
     score: float  # 0.0 a 1.0
     match_type: str  # 'artist_frequency' ou 'audio_features'
-    
+    reason: str = ""
+
     def __repr__(self) -> str:
         return f"MatchResult({self.playlist_name!r}, score={self.score:.2%})"
 

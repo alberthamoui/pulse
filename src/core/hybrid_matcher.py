@@ -7,21 +7,56 @@ Matcher híbrido: combina frequência de artista + overlap de gênero.
 Resolve casos onde o artista não está em nenhuma playlist mas seus gêneros coincidem.
 """
 
-from typing import Dict, List, Optional
+import math
+from typing import Dict, List, Optional, Set
 from .models import Track, PlaylistProfile, MatchResult
 from .matcher_base import Matcher
 
 ALPHA = 0.8  # peso do sinal de artista vs gênero
+BETA  = 0.5  # peso do sinal indireto de co-ocorrência
 
 
 class HybridMatcher(Matcher):
 
     def __init__(self, spotify_manager):
         self.profiles: Dict[str, PlaylistProfile] = {}
+        self.idf: Dict[str, float] = {}
+        self.artist_to_playlists: Dict[str, Set[str]] = {}
+        self.name_to_id: Dict[str, str] = {}
         self.spotify = spotify_manager
 
-    def train(self, profiles: Dict[str, PlaylistProfile]) -> None:
+    def train(self, profiles: Dict[str, PlaylistProfile], artist_names: Dict[str, str] = None) -> None:
         self.profiles = profiles
+        self.name_to_id = {name.lower(): aid for aid, name in (artist_names or {}).items()}
+        self._compute_idf()
+        self._build_cooccurrence_index()
+
+    def _compute_idf(self) -> None:
+        """IDF = log(N / df) onde df = nº de playlists que contêm o artista."""
+        n = len(self.profiles)
+        if n == 0:
+            return
+        df: Dict[str, int] = {}
+        for profile in self.profiles.values():
+            for artist_id in profile.artista_weights:
+                df[artist_id] = df.get(artist_id, 0) + 1
+        self.idf = {artist_id: math.log(n / count) for artist_id, count in df.items()}
+
+    def _build_cooccurrence_index(self) -> None:
+        """Índice artista → conjunto de playlist IDs para cálculo de Jaccard."""
+        self.artist_to_playlists = {}
+        for pl_id, profile in self.profiles.items():
+            for artist_id in profile.artista_weights:
+                self.artist_to_playlists.setdefault(artist_id, set()).add(pl_id)
+
+    def _jaccard(self, artist_a: str, artist_b: str) -> float:
+        set_a = self.artist_to_playlists.get(artist_a, set())
+        set_b = self.artist_to_playlists.get(artist_b, set())
+        if not set_a or not set_b:
+            return 0.0
+        intersection = len(set_a & set_b)
+        union = len(set_a | set_b)
+        return intersection / union if union else 0.0
 
     def _genre_overlap(
         self,
@@ -33,33 +68,114 @@ class HybridMatcher(Matcher):
         matched = sum(playlist_genre_weights.get(g, 0.0) for g in track_genres)
         return matched / len(track_genres)
 
-    def match(self, track: Track, **kwargs) -> Optional[MatchResult]:
+    def _score_all(self, track: Track) -> List[tuple]:
+        """Calcula e retorna [(pl_id, pl_name, score, reason)] ordenado por score desc."""
         if not track.id_artista:
-            return None
+            return []
 
         track_genres = self.spotify.get_artists_genres([track.id_artista]).get(track.id_artista, [])
+        idf = self.idf.get(track.id_artista, 0.0)
 
-        best_id: Optional[str] = None
-        best_name: Optional[str] = None
-        best_score = -1.0
+        # Jaccard do artista atual vs todos os outros — calculado uma vez por match
+        jaccard_cache: Dict[str, float] = {}
 
+        results = []
         for pl_id, profile in self.profiles.items():
-            artist_w = profile.artista_weights.get(track.id_artista, 0.0)
+            tf = profile.artista_weights.get(track.id_artista, 0.0)
             overlap = self._genre_overlap(track_genres, profile.genre_weights)
 
-            score = ALPHA * artist_w + (1 - ALPHA) * overlap if artist_w > 0 else overlap
+            tfidf = tf * idf if tf > 0 else 0.0
 
-            if score > best_score:
-                best_score, best_id, best_name = score, pl_id, profile.nome
+            # Sinal indireto: soma de Jaccard(X, Y) × TF-IDF(Y, playlist) para Y ≠ X
+            indirect = 0.0
+            for other_artist, other_tf in profile.artista_weights.items():
+                if other_artist == track.id_artista:
+                    continue
+                if other_artist not in jaccard_cache:
+                    jaccard_cache[other_artist] = self._jaccard(track.id_artista, other_artist)
+                j = jaccard_cache[other_artist]
+                if j > 0:
+                    indirect += j * other_tf * self.idf.get(other_artist, 0.0)
 
-        if best_id and best_score > 0:
-            return MatchResult(
-                playlist_id=best_id,
-                playlist_name=best_name,
-                score=best_score,
-                match_type='hybrid',
+            artist_score = tfidf + BETA * indirect
+            score = ALPHA * artist_score + (1 - ALPHA) * overlap
+
+            if tfidf > 0 and indirect > 0:
+                reason = f"direto={tfidf:.4f} + co-oc={indirect:.4f}"
+            elif tfidf > 0:
+                reason = f"direto: tf={tf:.2%} x idf={idf:.2f}"
+            elif indirect > 0:
+                reason = f"co-ocorrência ({indirect:.4f})"
+            else:
+                reason = "sem sinal"
+
+            results.append((pl_id, profile.nome, score, reason))
+
+        return sorted(results, key=lambda x: x[2], reverse=True)
+
+    def match(self, track: Track, **kwargs) -> Optional[MatchResult]:
+        scored = self._score_all(track)
+        if not scored or scored[0][2] <= 0:
+            return None
+        pl_id, pl_name, score, reason = scored[0]
+        return MatchResult(playlist_id=pl_id, playlist_name=pl_name, score=score, match_type='hybrid', reason=reason)
+
+    def top_matches(self, track: Track, n: int = 5) -> List[MatchResult]:
+        """Retorna os top N melhores matches com score > 0."""
+        return [
+            MatchResult(playlist_id=pl_id, playlist_name=pl_name, score=score, match_type='hybrid', reason=reason)
+            for pl_id, pl_name, score, reason in self._score_all(track)[:n]
+            if score > 0
+        ]
+
+    def lastfm_fallback(self, track: Track, api_key: str, n: int = 3) -> List[MatchResult]:
+        """
+        Último recurso quando score=0 para todas as playlists.
+        Busca artistas similares no Last.fm e pontua playlists via afinidade.
+        """
+        from .lastfm_client import get_similar_artists
+        similar = get_similar_artists(track.artista, api_key)
+        if not similar:
+            print("  Last.fm: nenhum artista similar encontrado.")
+            return []
+
+        print(f"  Last.fm: {len(similar)} artistas similares encontrados.")
+        matched_any = False
+        playlist_scores: Dict[str, float] = {}
+        playlist_reasons: Dict[str, List[str]] = {}
+
+        for sim in similar:
+            artist_id = self.name_to_id.get(sim['name'].lower())
+            if not artist_id:
+                print(f"    ~ {sim['name']} ({sim['match']:.2f}) — não está em nenhuma playlist")
+                continue
+            matched_any = True
+            for pl_id, profile in self.profiles.items():
+                tf = profile.artista_weights.get(artist_id, 0.0)
+                if tf == 0:
+                    continue
+                idf = self.idf.get(artist_id, 0.0)
+                contribution = sim['match'] * tf * idf
+                playlist_scores[pl_id] = playlist_scores.get(pl_id, 0.0) + contribution
+                playlist_reasons.setdefault(pl_id, []).append(
+                    f"{sim['name']} ({sim['match']:.2f})"
+                )
+
+        if not matched_any:
+            print("  Last.fm: artistas similares encontrados mas nenhum está nas suas playlists.")
+
+        results = [
+            MatchResult(
+                playlist_id=pl_id,
+                playlist_name=self.profiles[pl_id].nome,
+                score=score,
+                match_type='lastfm',
+                reason=f"via Last.fm: {', '.join(playlist_reasons[pl_id][:3])}",
             )
-        return None
+            for pl_id, score in playlist_scores.items()
+            if score > 0
+        ]
+        return sorted(results, key=lambda x: x.score, reverse=True)[:n]
 
     def get_name(self) -> str:
         return "Hybrid Matcher (Artist + Genre)"

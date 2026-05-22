@@ -26,28 +26,28 @@ class SpotifyPlaylistAnalyzer:
         """
         self.spotify = spotify_manager
     
-    def fetch_tracks(self, playlist_id: str) -> List[Track]:
+    def fetch_tracks(self, playlist_id: str) -> tuple[List[Track], int]:
         """
         Extrai todas as faixas de uma playlist com paginação.
-        
-        Args:
-            playlist_id: ID da playlist no Spotify
-            
+
         Returns:
-            Lista de Track objects com os dados extraídos
+            (lista de Track, total de faixas reportado pela API)
         """
         tracks = []
+        total = 0
         offset = 0
-        
+
         while True:
             response = self.spotify.sp.playlist_items(playlist_id, limit=100, offset=offset)
-            
+            if offset == 0:
+                total = response.get('total', 0)
+
             for item in response.get('items', []):
                 track = item.get('item')
                 if track and track.get('id'):
                     artists = track.get('artists', [])
                     first_artist = artists[0] if artists else {}
-                    
+
                     track_obj = Track(
                         id=track['id'],
                         nome=track.get('name', 'Desconhecido'),
@@ -55,38 +55,39 @@ class SpotifyPlaylistAnalyzer:
                         id_artista=first_artist.get('id')
                     )
                     tracks.append(track_obj)
-            
+
             if not response.get('next'):
                 break
             offset += 100
-        
-        return tracks
+
+        return tracks, total
     
-    def build_artist_profile(self, playlist_id: str) -> Dict[str, float]:
+    def build_artist_profile(self, playlist_id: str) -> tuple[Dict[str, float], int, list]:
         """
         Constrói o perfil de uma playlist baseado em frequência de artistas.
-        
-        Returns um dicionário { id_artista: peso_relativo }
-        onde peso_relativo é a frequência do artista (soma = 1.0)
-        
-        Args:
-            playlist_id: ID da playlist
-            
+
         Returns:
-            Dict com pesos normalizados de artistas
+            ({ id_artista: peso_relativo }, total_tracks reportado pela API, lista de track IDs)
         """
-        tracks = self.fetch_tracks(playlist_id)
-        
+        tracks, total_tracks = self.fetch_tracks(playlist_id)
+
         if not tracks:
-            return {}
-        
-        # Conta quantas vezes cada artista aparece
+            return {}, total_tracks, []
+
+        track_ids = [t.id for t in tracks if t.id]
+        artist_names = {t.id_artista: t.artista for t in tracks if t.id_artista and t.artista}
         artist_ids = [t.id_artista for t in tracks if t.id_artista]
         artist_counter = Counter(artist_ids)
         total = sum(artist_counter.values())
-        
-        # Normaliza os pesos para somar a 1.0
-        return {artist_id: count / total for artist_id, count in artist_counter.items()}
+        V = len(artist_counter)
+
+        ALPHA = 1  # Laplace smoothing
+        smoothed = {
+            artist_id: (count + ALPHA) / (total + ALPHA * V)
+            for artist_id, count in artist_counter.items()
+        }
+
+        return smoothed, total_tracks, track_ids, artist_names
     
     def build_genre_profile(self, artist_weights: Dict[str, float]) -> Dict[str, float]:
         """
@@ -104,17 +105,15 @@ class SpotifyPlaylistAnalyzer:
         total = sum(raw.values())
         return {g: w / total for g, w in raw.items()} if total > 0 else {}
 
-    def build_all_profiles(self, playlists: List[Dict[str, str]]) -> Dict[str, PlaylistProfile]:
+    def build_all_profiles(self, playlists: List[Dict[str, str]]) -> tuple[Dict[str, PlaylistProfile], Dict[str, str]]:
         """
         Constrói perfis para múltiplas playlists.
-        
-        Args:
-            playlists: Lista de dicts com 'id' e 'name' da playlist
-            
+
         Returns:
-            Dict mapeando playlist_id → PlaylistProfile
+            (playlist_id → PlaylistProfile, artist_id → artist_name)
         """
         profiles = {}
+        artist_names: Dict[str, str] = {}
         total = len(playlists)
         t_start = time.time()
         lock = threading.Lock()
@@ -127,19 +126,13 @@ class SpotifyPlaylistAnalyzer:
                 return None
 
             try:
-                artist_weights = self.build_artist_profile(playlist_id)
+                artist_weights, total_tracks, track_ids, names = self.build_artist_profile(playlist_id)
                 genre_weights = self.build_genre_profile(artist_weights)
             except Exception:
                 with lock:
                     done[0] += 1
                     print(f"  [{done[0]}/{total}] {playlist_name}... pulando (sem acesso)")
                 return None
-
-            try:
-                response = self.spotify.sp.playlist(playlist_id, fields='tracks.total')
-                total_tracks = response.get('tracks', {}).get('total', 0)
-            except Exception:
-                total_tracks = 0
 
             with lock:
                 done[0] += 1
@@ -151,18 +144,20 @@ class SpotifyPlaylistAnalyzer:
                 artista_weights=artist_weights,
                 genre_weights=genre_weights,
                 total_tracks=total_tracks,
-            )
+                track_ids=track_ids,
+            ), names
 
         with ThreadPoolExecutor(max_workers=5) as executor:
             for result in as_completed([executor.submit(process, p) for p in playlists]):
                 data = result.result()
                 if data:
-                    pl_id, profile = data
+                    pl_id, profile, names = data
                     profiles[pl_id] = profile
+                    artist_names.update(names)
 
         elapsed = time.time() - t_start
         print(f"Análise concluída em {elapsed:.1f}s ({len(profiles)}/{total} playlists).")
-        return profiles
+        return profiles, artist_names
     
     def fetch_playlist_tracks_with_features(
         self, playlist_id: str
@@ -176,10 +171,9 @@ class SpotifyPlaylistAnalyzer:
         Returns:
             Tupla (lista de Track, lista de AudioFeatures)
         """
-        tracks = self.fetch_tracks(playlist_id)
+        tracks, _ = self.fetch_tracks(playlist_id)
         features_list = []
-        
-        # Spotify permite até 100 IDs por requisição
+
         for i in range(0, len(tracks), 100):
             batch = tracks[i:i+100]
             track_ids = [t.id for t in batch]

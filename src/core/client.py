@@ -190,23 +190,19 @@ class SpotifyManager:
 
 
 
-    def add_track_to_playlist(self, playlist_id: str, track_id: str) -> bool:
+    def add_track_to_playlist(self, playlist_id: str, track_id: str) -> Optional[str]:
         """
         Adiciona uma música a uma playlist.
-        
-        Args:
-            playlist_id: ID da playlist
-            track_id: ID da música
-            
+
         Returns:
-            True se sucesso, False se erro
+            Novo snapshot_id da playlist se sucesso, None se erro.
         """
         try:
-            self.sp.playlist_add_items(playlist_id, [track_id])
-            return True
+            result = self.sp.playlist_add_items(playlist_id, [track_id])
+            return result.get('snapshot_id')
         except Exception as e:
             print(f"Erro ao adicionar música: {e}")
-            return False
+            return None
 
     # Métodos legados para compatibilidade
     def obter_musica_atual(self) -> Optional[Dict]:
