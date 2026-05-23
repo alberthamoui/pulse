@@ -276,33 +276,49 @@ def run_pulse(force_refresh: bool = False) -> dict:
     # Confirmação interativa
     if matcher_type == 'hybrid':
         options = candidates
+        liked_num    = len(options) + 1
+        fallback_num = len(options) + 2
+        skip_num     = len(options) + 3
+
+        track_in_liked    = spotify.is_track_liked(track.id)
+        track_in_fallback = track.id in spotify.get_playlist_track_ids(fallback_id)
+
+        liked_label    = "Músicas Curtidas (já está)" if track_in_liked    else "Músicas Curtidas"
+        fallback_label = "FALLBACK_PULSE (já está)"   if track_in_fallback else "FALLBACK_PULSE"
+
         print()
         print("Onde adicionar?")
-        if options:
-            for i, r in enumerate(options, 1):
-                marker = "(recomendado)" if i == 1 else ""
-                print(f"  [{i}] {r.playlist_name}: {r.score:.2%} ({r.reason}) {marker}")
-        print(f"  [f] FALLBACK_PULSE")
-        print(f"  [s] Não adicionar")
+        for i, r in enumerate(options, 1):
+            marker = "(recomendado)" if i == 1 else ""
+            print(f"  [{i}] {r.playlist_name}: {r.score:.2%} ({r.reason}) {marker}")
+        print(f"  [{liked_num}] {liked_label}")
+        print(f"  [{fallback_num}] {fallback_label}")
+        print(f"  [{skip_num}] Não adicionar")
         print()
 
+        valid_range = '/'.join(str(i) for i in range(1, skip_num + 1))
         while True:
-            raw = input("Escolha [1/2/3/f/s] (Enter = 1): ").strip().lower()
-            if raw in ('', '1') and options:
+            raw    = input(f"Escolha [{valid_range}] (Enter = 1): ").strip()
+            choice = raw if raw else '1'
+
+            if not choice.isdigit():
+                print("  Opção inválida, tente novamente.")
+                continue
+
+            n = int(choice)
+            if 1 <= n <= len(options):
+                playlist_id   = options[n - 1].playlist_id
+                playlist_name = options[n - 1].playlist_name
                 break
-            elif raw == '2' and len(options) >= 2:
-                playlist_id   = options[1].playlist_id
-                playlist_name = options[1].playlist_name
+            elif n == liked_num:
+                playlist_id   = "liked"
+                playlist_name = "Músicas Curtidas"
                 break
-            elif raw == '3' and len(options) >= 3:
-                playlist_id   = options[2].playlist_id
-                playlist_name = options[2].playlist_name
-                break
-            elif raw == 'f':
+            elif n == fallback_num:
                 playlist_id   = fallback_id
                 playlist_name = "FALLBACK_PULSE"
                 break
-            elif raw == 's':
+            elif n == skip_num:
                 elapsed = round(time.time() - t_start, 1)
                 print(f"Cancelado. [{elapsed}s | {spotify.api_calls} chamadas API]")
                 return {'success': False, 'error': 'Cancelado pelo usuario'}

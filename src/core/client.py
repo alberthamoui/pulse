@@ -31,7 +31,9 @@ class SpotifyManager:
             "user-read-currently-playing "
             "playlist-modify-private "
             "playlist-modify-public "
-            "playlist-read-private"
+            "playlist-read-private "
+            "user-library-read "
+            "user-library-modify"
         )
         
         self.sp = spotipy.Spotify(auth_manager=SpotifyOAuth(
@@ -190,14 +192,43 @@ class SpotifyManager:
 
 
 
+    def is_track_liked(self, track_id: str) -> bool:
+        try:
+            result = self.sp.current_user_saved_tracks_contains([track_id])
+            return bool(result and result[0])
+        except Exception:
+            return False
+
+    def get_playlist_track_ids(self, playlist_id: str) -> set:
+        ids = set()
+        try:
+            offset = 0
+            while True:
+                result = self.sp.playlist_items(
+                    playlist_id, fields="items(track(id)),next", limit=100, offset=offset
+                )
+                for item in result.get('items', []):
+                    t = item.get('track')
+                    if t and t.get('id'):
+                        ids.add(t['id'])
+                if not result.get('next'):
+                    break
+                offset += 100
+        except Exception:
+            pass
+        return ids
+
     def add_track_to_playlist(self, playlist_id: str, track_id: str) -> Optional[str]:
         """
-        Adiciona uma música a uma playlist.
+        Adiciona uma música a uma playlist ou às Músicas Curtidas (id="liked").
 
         Returns:
-            Novo snapshot_id da playlist se sucesso, None se erro.
+            Novo snapshot_id da playlist, "liked" para curtidas, None se erro.
         """
         try:
+            if playlist_id == "liked":
+                self.sp.current_user_saved_tracks_add([track_id])
+                return "liked"
             result = self.sp.playlist_add_items(playlist_id, [track_id])
             return result.get('snapshot_id')
         except Exception as e:
