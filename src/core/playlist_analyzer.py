@@ -12,6 +12,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import List, Dict, Optional
 from .models import Track, PlaylistProfile, AudioFeatures
 from .client import SpotifyManager
+from config.constants import LAPLACE_ALPHA, PLAYLIST_WORKERS
 
 
 class SpotifyPlaylistAnalyzer:
@@ -81,9 +82,8 @@ class SpotifyPlaylistAnalyzer:
         total = sum(artist_counter.values())
         V = len(artist_counter)
 
-        ALPHA = 1  # Laplace smoothing
         smoothed = {
-            artist_id: (count + ALPHA) / (total + ALPHA * V)
+            artist_id: (count + LAPLACE_ALPHA) / (total + LAPLACE_ALPHA * V)
             for artist_id, count in artist_counter.items()
         }
 
@@ -147,7 +147,7 @@ class SpotifyPlaylistAnalyzer:
                 track_ids=track_ids,
             ), names
 
-        with ThreadPoolExecutor(max_workers=5) as executor:
+        with ThreadPoolExecutor(max_workers=PLAYLIST_WORKERS) as executor:
             for result in as_completed([executor.submit(process, p) for p in playlists]):
                 data = result.result()
                 if data:

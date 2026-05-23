@@ -11,9 +11,7 @@ import math
 from typing import Dict, List, Optional, Set
 from .models import Track, PlaylistProfile, MatchResult
 from .matcher_base import Matcher
-
-ALPHA = 0.8  # peso do sinal de artista vs gênero
-BETA  = 0.5  # peso do sinal indireto de co-ocorrência
+from config.constants import ALGO_ALPHA as ALPHA, ALGO_BETA as BETA
 
 
 class HybridMatcher(Matcher):
