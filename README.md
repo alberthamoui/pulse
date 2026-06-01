@@ -8,7 +8,7 @@ Detecta a música tocando no Spotify e a adiciona automaticamente na playlist ma
 pulse/
 ├── main.py              # Entry point
 ├── config/
-│   ├── settings.py      # Credenciais Spotify (não commitar)
+│   ├── settings.py      # Credenciais Spotify
 │   └── config.json      # Configuração (algoritmo, fallback, cache)
 ├── src/
 │   ├── core/            # Lógica principal
