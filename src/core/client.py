@@ -88,10 +88,12 @@ class SpotifyManager:
                     artista=first_artist.get('name', 'Desconhecido'),
                     id_artista=first_artist.get('id')
                 )
+            return None  # música não tocando
+        except (spotipy.exceptions.SpotifyException, ConnectionError, TimeoutError) as e:
+            raise  # relança erros graves para main.py tratar
         except Exception as e:
-            print(f"Erro ao obter música atual: {e}")
-        
-        return None
+            print(f"Erro inesperado ao obter música atual: {e}")
+            return None
 
     def get_audio_features(self, track_id: str) -> Optional[Dict]:
         """
@@ -184,8 +186,10 @@ class SpotifyManager:
                 for artist in response.get('artists') or []:
                     if artist:
                         result[artist['id']] = artist.get('genres', [])
-            except Exception:
-                return {aid: [] for aid in artist_ids}
+            except Exception as e:
+                # Erro inesperado - logar e relançar
+                logging.error(f"Erro inesperado ao buscar gêneros: {e}")
+                raise
             finally:
                 spotipy_logger.setLevel(prev_level)
         return result

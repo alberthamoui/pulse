@@ -3,8 +3,8 @@ PULSE - Pega a musica tocando no Spotify e adiciona na playlist mais compativel.
 Se nao houver match, adiciona na playlist de fallback (FALLBACK_PULSE).
 
 Uso:
-  python main.py            # usa cache se disponivel
-  python main.py --refresh  # forca reanálise das playlists
+    python main.py            # usa cache se disponivel
+    python main.py --refresh  # forca reanálise das playlists
 """
 
 import json
@@ -12,6 +12,7 @@ import sys
 import time
 from datetime import datetime, timezone
 from pathlib import Path
+import spotipy
 
 ROOT = Path(__file__).parent
 sys.path.insert(0, str(ROOT / 'src'))
@@ -109,12 +110,12 @@ def build_profiles_for(spotify: SpotifyManager, playlists: list, matcher_type: s
 
 
 def sync_profiles(spotify: SpotifyManager, all_playlists: list, cached_data: dict | None,
-                  matcher_type: str, fallback_id: str) -> tuple[dict, dict, dict]:
+                    matcher_type: str) -> tuple[dict, dict, dict]:
     """
     Atualiza apenas as playlists cujo snapshot_id mudou desde o ultimo cache.
     Retorna (profiles_data, snapshots_atual, artist_names).
     """
-    playlists = [p for p in all_playlists if p['id'] != fallback_id]
+    playlists = [p for p in all_playlists if p['id']]
     current_snapshots = {p['id']: p['snapshot_id'] for p in playlists}
 
     if cached_data is None:
@@ -188,8 +189,8 @@ def run_pulse(force_refresh: bool = False) -> dict:
     Executa o ciclo completo do Pulse.
 
     Retorna:
-      {'success': True,  'track': '...', 'playlist': '...', 'elapsed': 1.2}
-      {'success': False, 'error': 'mensagem'}
+        {'success': True,  'track': '...', 'playlist': '...', 'elapsed': 1.2}
+        {'success': False, 'error': 'mensagem'}
     """
     t_start = time.time()
 
@@ -213,10 +214,16 @@ def run_pulse(force_refresh: bool = False) -> dict:
         redirect_uri=SPOTIFY_REDIRECT_URI
     )
 
-    track = spotify.get_current_track()
+    try:
+        track = spotify.get_current_track()
+    except (spotipy.exceptions.SpotifyException, ConnectionError, TimeoutError) as e:
+        return {'success': False, 'error': f'Erro Spotify/conexão: {e}'}
+    except TimeoutError:
+        return {'success': False, 'error': 'Timeout ao conectar ao Spotify'}
+
     if not track:
         print("Nenhuma musica tocando no momento.")
-        return {'success': False, 'error': 'Nenhuma musica tocando'}
+        return {'success': False, 'error': 'Nenhuma música tocando'}
 
     print(f"Tocando: {track.nome} - {track.artista}")
 
@@ -225,7 +232,7 @@ def run_pulse(force_refresh: bool = False) -> dict:
 
     cached_data   = None if force_refresh else load_cache(cache_path, matcher_type)
     profiles_data, snapshots, artist_names = sync_profiles(
-        spotify, all_playlists, cached_data, matcher_type, fallback_id
+        spotify, all_playlists, cached_data, matcher_type
     )
 
     if profiles_data:
@@ -281,7 +288,7 @@ def run_pulse(force_refresh: bool = False) -> dict:
         skip_num     = len(options) + 3
 
         track_in_liked    = spotify.is_track_liked(track.id)
-        track_in_fallback = track.id in spotify.get_playlist_track_ids(fallback_id)
+        track_in_fallback = track.id in profiles_data.get(fallback_id, {}).get('track_ids', [])  
 
         liked_label    = "Músicas Curtidas (já está)" if track_in_liked    else "Músicas Curtidas"
         fallback_label = "FALLBACK_PULSE (já está)"   if track_in_fallback else "FALLBACK_PULSE"
