@@ -11,18 +11,19 @@ pulse/
 │   ├── settings.py      # Credenciais Spotify
 │   └── config.json      # Configuração (algoritmo, fallback, cache)
 ├── src/
-│   ├── core/            # Lógica principal
-│   │   ├── models.py
-│   │   ├── client.py
-│   │   ├── playlist_analyzer.py
-│   │   ├── matcher_base.py
-│   │   ├── artist_frequency_matcher.py
-│   │   ├── hybrid_matcher.py
-│   │   └── matcher.py
-│   └── hardware/
-│       └── handler.py   # Botão GPIO (opcional, Raspberry Pi)
+│   └── core/            # Lógica principal
+│       ├── models.py
+│       ├── client.py
+│       ├── playlist_analyzer.py
+│       ├── matcher_base.py
+│       ├── artist_frequency_matcher.py
+│       ├── hybrid_matcher.py
+│       ├── lastfm_client.py
+│       └── matcher.py
 ├── hardware/
-│   └── handler.py
+│   ├── handler.py       # Botão GPIO genérico
+│   ├── pi_zero/         # Loop para Raspberry Pi Zero (config "mode": "hardware")
+│   └── pico/            # Protótipo MicroPython (Pi Pico / Wokwi)
 ├── tests/
 │   └── validate_modules.py
 └── docs/
@@ -32,8 +33,11 @@ pulse/
 ## Uso
 
 ```bash
-python main.py            # usa cache se disponível
-python main.py --refresh  # força reanálise das playlists
+python main.py                 # usa cache se disponível
+python main.py --auto          # adiciona sem perguntar se o score passar do mínimo
+python main.py --dry-run       # mostra os candidatos, não adiciona nada
+python main.py --refresh       # força reanálise das playlists
+python main.py --cache-refresh # só reconstrói o cache
 ```
 
 ## Configuração
@@ -50,7 +54,8 @@ SPOTIFY_REDIRECT_URI = "http://localhost:8888/callback"
 {
   "algorithm": "hybrid",
   "fallback_playlist_id": "...",
-  "cache_file": ".pulse_cache.json"
+  "cache_file": ".pulse_cache.json",
+  "auto_add_min_score": 0.5
 }
 ```
 
