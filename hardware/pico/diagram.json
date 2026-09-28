@@ -1,0 +1,63 @@
+{
+  "version": 1,
+  "author": "Pulse",
+  "editor": "wokwi",
+  "parts": [
+    { "type": "wokwi-pi-pico", "id": "pico", "top": 0, "left": 0, "attrs": {} },
+    {
+      "type": "wokwi-pushbutton",
+      "id": "btn_trigger",
+      "top": -80,
+      "left": 200,
+      "attrs": { "color": "green", "label": "trigger" }
+    },
+    {
+      "type": "wokwi-pushbutton",
+      "id": "btn_up",
+      "top": -80,
+      "left": 270,
+      "attrs": { "color": "blue", "label": "cima" }
+    },
+    {
+      "type": "wokwi-pushbutton",
+      "id": "btn_down",
+      "top": -80,
+      "left": 340,
+      "attrs": { "color": "yellow", "label": "baixo" }
+    },
+    {
+      "type": "wokwi-pushbutton",
+      "id": "btn_confirm",
+      "top": -80,
+      "left": 410,
+      "attrs": { "color": "red", "label": "confirm" }
+    },
+    { "type": "wokwi-led", "id": "led1", "top": 100, "left": 220, "attrs": { "color": "yellow" } },
+    { "type": "wokwi-resistor", "id": "r1", "top": 100, "left": 160, "attrs": { "value": "220" } },
+    {
+      "type": "board-ssd1306",
+      "id": "oled1",
+      "top": 156.74,
+      "left": -162.97,
+      "attrs": { "address": "0x3c" }
+    }
+  ],
+  "connections": [
+    [ "pico:GP15", "btn_trigger:1.l", "green", [] ],
+    [ "btn_trigger:2.l", "pico:GND.1", "black", [] ],
+    [ "pico:GP16", "btn_up:1.l", "blue", [] ],
+    [ "btn_up:2.l", "pico:GND.2", "black", [] ],
+    [ "pico:GP17", "btn_down:1.l", "yellow", [] ],
+    [ "btn_down:2.l", "pico:GND.3", "black", [] ],
+    [ "pico:GP18", "btn_confirm:1.l", "red", [] ],
+    [ "btn_confirm:2.l", "pico:GND.4", "black", [] ],
+    [ "pico:GP14", "r1:1", "orange", [] ],
+    [ "r1:2", "led1:A", "orange", [] ],
+    [ "led1:K", "pico:GND.5", "black", [] ],
+    [ "pico:GP2", "oled1:SDA", "blue", [] ],
+    [ "pico:GP3", "oled1:SCL", "blue", [] ],
+    [ "pico:3V3", "oled1:VCC", "red", [] ],
+    [ "pico:GND.6", "oled1:GND", "black", [] ]
+  ],
+  "dependencies": {}
+}
