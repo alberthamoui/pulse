@@ -1,82 +1,113 @@
 # Pulse
 
-Detecta a música tocando no Spotify e a adiciona automaticamente na playlist mais compatível. Sem match, cai na playlist de fallback (`FALLBACK_PULSE`).
+![Python](https://img.shields.io/badge/python-3.10%2B-blue)
+![License: MIT](https://img.shields.io/badge/license-MIT-green)
 
-## Estrutura
+Pulse looks at the song currently playing on Spotify and adds it to the playlist where it fits best.
 
-```
-pulse/
-├── main.py              # Entry point
-├── config/
-│   ├── constants.py            # Parâmetros do algoritmo (versionado)
-│   ├── settings.example.py     # Modelo de credenciais → copiar para settings.py
-│   └── config.example.json     # Modelo de configuração → copiar para config.json
-├── src/
-│   └── core/            # Lógica principal
-│       ├── models.py
-│       ├── client.py
-│       ├── playlist_analyzer.py
-│       ├── matcher_base.py
-│       ├── artist_frequency_matcher.py
-│       ├── hybrid_matcher.py
-│       ├── lastfm_client.py
-│       └── matcher.py
-├── hardware/
-│   ├── handler.py       # Botão GPIO genérico
-│   ├── pi_zero/         # Loop para Raspberry Pi Zero (config "mode": "hardware")
-│   └── pico/            # Protótipo MicroPython (Pi Pico / Wokwi)
-├── tests/
-│   └── validate_modules.py
-└── docs/
-    └── ARCHITECTURE.md
+I have around 50 playlists, and every time I heard something I liked I had to stop and think about where it should go. Pulse does that part for me: it builds a profile of each playlist from the artists in it, scores the current track against all of them and suggests the top 3.
+
+There's no trained model here. Each playlist is treated like a document and each artist like a word, and the ranking uses TF-IDF plus a co-occurrence signal between artists. So the suggestions come entirely from how I already organize my own music.
+
+## How it works
+
+```mermaid
+flowchart TD
+    A[Currently playing track] --> B[Sync playlist profiles from cache]
+    B --> C[Score every playlist]
+    C -->|no signal| D[Ask Last.fm for similar artists]
+    C --> E[Top 3 candidates]
+    D --> E
+    E --> F[Choose / auto-add / dry-run]
+    F --> G[Add to playlist and update cache]
 ```
 
-## Uso
+**Playlist profiles.** For each playlist I count how many times each artist shows up and turn that into a smoothed frequency:
+
+```
+tf(artist, playlist) = (count + 1) / (tracks + V)      V = distinct artists in the playlist
+```
+
+Without the smoothing, small playlists won: one artist in a 3-song playlist gets 0.33 and beats everything else.
+
+**Artist weight.** An artist that's in every playlist doesn't help decide anything, so each artist gets an IDF:
+
+```
+idf(artist) = log(N / df)      N = number of playlists, df = playlists with that artist
+```
+
+**Scoring.** For the artist X of the current track, each playlist p gets:
+
+```
+direct   = tf(X, p) * idf(X)
+indirect = sum over other artists Y in p of  jaccard(X, Y) * tf(Y, p) * idf(Y)
+score    = 0.8 * (direct + 0.5 * indirect) + 0.2 * genre_overlap
+```
+
+`jaccard(X, Y)` measures how often X and Y end up in the same playlists. This is what makes a new song from an artist I rarely add still land next to the artists I usually group with them. The weights live in `config/constants.py`.
+
+**Unknown artists.** If nothing scores above zero, Pulse asks Last.fm for similar artists, finds the ones already in my library and scores the playlists through them. If that also fails, the song goes to a fallback playlist so nothing gets lost.
+
+**Cache.** Reading every playlist takes about 100 API calls, so profiles are cached and a playlist is only re-read when its Spotify `snapshot_id` changes. A normal run ends up using around 5 calls. When playlists do need rebuilding, they're fetched in parallel.
+
+There's a longer write-up of the internals (in Portuguese) in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+
+## Setup
+
+You need Python 3.10+ and a Spotify app from the [developer dashboard](https://developer.spotify.com/dashboard). A [Last.fm API key](https://www.last.fm/api/account/create) is optional and only used for unknown artists.
 
 ```bash
-python main.py                 # usa cache se disponível
-python main.py --auto          # adiciona sem perguntar se o score passar do mínimo
-python main.py --dry-run       # mostra os candidatos, não adiciona nada
-python main.py --refresh       # força reanálise das playlists
-python main.py --cache-refresh # só reconstrói o cache
-```
+git clone https://github.com/alberthamoui/pulse.git
+cd pulse
+python -m venv .venv
+source .venv/bin/activate      # on Windows: .venv\Scripts\activate
+pip install -r requirements.txt
 
-## Configuração
-
-Copie os arquivos de exemplo e preencha com seus dados (os arquivos copiados ficam fora do git):
-
-```bash
 cp config/settings.example.py config/settings.py
 cp config/config.example.json config/config.json
 ```
 
-**`config/settings.py`** — credenciais do Spotify e Last.fm (opcional):
-```python
-SPOTIFY_CLIENT_ID     = "..."
-SPOTIFY_CLIENT_SECRET = "..."
-SPOTIFY_REDIRECT_URI  = "http://127.0.0.1:8080"
-LASTFM_API_KEY        = ""
-```
+Then:
 
-**`config/config.json`** — parâmetros do sistema:
-```json
-{
-  "algorithm": "hybrid",
-  "fallback_playlist_id": "...",
-  "cache_file": ".pulse_cache.json",
-  "auto_add_min_score": 0.5,
-  "mode": "code"
-}
-```
+1. Add `http://127.0.0.1:8080` as a Redirect URI in your Spotify app settings.
+2. Put your client ID and secret (and the Last.fm key, if you have one) in `config/settings.py`.
+3. Create an empty playlist for songs that don't match anything and put its ID in `fallback_playlist_id` in `config/config.json`.
 
-**`config/constants.py`** — parâmetros do algoritmo (pesos, Last.fm, threads). É versionado, sem dados sensíveis.
+Both files are in `.gitignore`.
 
-Algoritmos disponíveis: `artist_frequency`, `hybrid`, `audio_features`.
+Other options in `config.json`:
 
-## Instalação
+- `algorithm`: `hybrid` (the one described above) or `artist_frequency` (simpler baseline, just artist frequency)
+- `cache_file`: where the profiles are saved, `.pulse_cache.json` by default
+- `auto_add_min_score`: minimum score for `--auto` to add without asking
+
+## Usage
+
+Play something on Spotify and run:
 
 ```bash
-pip install -r requirements.txt
+python main.py                  # shows the top 3 and asks where to add
+python main.py --auto           # adds to the best match if it passes the minimum score
+python main.py --dry-run        # only shows the ranking
+python main.py --refresh        # rebuilds all profiles before running
+python main.py --cache-refresh  # only rebuilds the cache
 ```
 
-`gpiozero` é opcional — só necessário em Raspberry Pi para o botão físico.
+The first run opens the browser to log in to Spotify and reads all your playlists, so it takes a bit longer. If the song is already in one of your playlists, Pulse warns you before adding it again.
+
+## Limitations
+
+- Spotify returns 403 on the artist genres endpoint for apps without extended access, so `genre_overlap` is always 0 right now and the ranking is based only on artists.
+- The co-occurrence signal only works for artists that are already in at least one playlist.
+- Only the main artist of a track is scored. Featured artists are already read from the API but not used yet.
+
+## Next steps
+
+- A small hardware version with a Raspberry Pi Zero, a button and an OLED screen, so I can save a song without opening the laptop. The parts are on the way; there's an early MicroPython prototype of the interface in `hardware/pico/`.
+- Normalize the score so the `--auto` threshold actually means something.
+- Use featured artists in the scoring.
+- Learn from my choices when I pick a different playlist than the suggested one.
+
+## License
+
+MIT
