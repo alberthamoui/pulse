@@ -6,6 +6,7 @@ config/*
 
 # Ambiente virtual
 pulse/
+.venv/
 
 # Cache Python
 __pycache__/
