@@ -80,14 +80,19 @@ class SpotifyManager:
             if result and result.get('is_playing') and result.get('item'):
                 item = result['item']
                 artists = item.get('artists', [])
+                artistas_ids = [a.get('id') for a in artists if a.get('id')]
+                artistas_names = [a.get('name') for a in artists if a.get('name')]
                 first_artist = artists[0] if artists else {}
                 
                 return Track(
                     id=item.get('id'),
                     nome=item.get('name'),
                     artista=first_artist.get('name', 'Desconhecido'),
-                    id_artista=first_artist.get('id')
+                    id_artista=first_artist.get('id'),
+                    artistas=artistas_ids,  # [a1, a2]
+                    artistas_nomes=artistas_names,  # ["Nome1", "Nome2"]
                 )
+
             return None  # música não tocando
         except (spotipy.exceptions.SpotifyException, ConnectionError, TimeoutError) as e:
             raise  # relança erros graves para main.py tratar

@@ -5,7 +5,7 @@ Define as estruturas de dados utilizadas em toda a aplicação.
 """
 
 from dataclasses import dataclass, field
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 
 
 @dataclass
@@ -13,9 +13,11 @@ class Track:
     """Representa uma faixa de música do Spotify."""
     id: str
     nome: str
-    artista: str
+    artista: str = ""
     id_artista: Optional[str] = None
-    
+    artistas: List[str] = field(default_factory=list)
+    artistas_nomes: List[str] = field(default_factory=list)
+
     def __repr__(self) -> str:
         return f"Track(nome={self.nome!r}, artista={self.artista!r})"
 
