@@ -3,24 +3,28 @@ PULSE - Pega a musica tocando no Spotify e adiciona na playlist mais compativel.
 Se nao houver match, adiciona na playlist de fallback (FALLBACK_PULSE).
 
 Uso:
-    python main.py            # usa cache se disponivel
-    python main.py --refresh  # forca reanálise das playlists
+    python main.py                 # usa cache se disponivel
+    python main.py --auto          # modo automático (sem prompts)
+    python main.py --dry-run       # executa o matching mas nao adiciona na playlist
+    python main.py --refresh       # forca reanálise das playlists
+    python main.py --cache-refresh # reconstrói o cache sem verificar música tocando
+
 """
 
-import json
 import sys
-import time
-from datetime import datetime, timezone
 from pathlib import Path
-import spotipy
-
 ROOT = Path(__file__).parent
 sys.path.insert(0, str(ROOT / 'src'))
 sys.path.insert(0, str(ROOT))
-
+import json
+import time
+from datetime import datetime, timezone
+import spotipy
 from core import SpotifyManager, SpotifyPlaylistAnalyzer, ArtistFrequencyMatcher, VibeMatcher, HybridMatcher
 from core.models import PlaylistProfile
 from config.settings import SPOTIFY_CLIENT_ID, SPOTIFY_CLIENT_SECRET, SPOTIFY_REDIRECT_URI, LASTFM_API_KEY
+
+DEFAULT_AUTO_ADD_MIN_SCORE = 0.5  # usado se 'auto_add_min_score' nao estiver no config.json
 
 
 def load_config() -> dict:
@@ -65,6 +69,23 @@ def save_cache(cache_path: Path, algorithm: str, profiles_data: dict, snapshots:
         print(f"Cache salvo em {cache_path}")
     except Exception as e:
         print(f"Aviso: nao foi possivel salvar cache: {e}")
+
+
+def atualiza_cache(profiles_data: dict, snapshots: dict, playlist_id: str, new_snapshot: str, track) -> None:
+    """Atualiza o cache localmente apos adicionar uma musica, sem chamadas extras a API."""
+    profile = profiles_data[playlist_id]
+    profile.setdefault('track_ids', []).append(track.id)
+    snapshots[playlist_id] = new_snapshot
+
+    total = profile.get('total_tracks', 0)
+    if total > 0 and track.id_artista:
+        new_total = total + 1
+        old_weight = profile['artista_weights'].get(track.id_artista, 0.0)
+        old_count  = round(old_weight * total)
+        new_weights = {a: w * total / new_total for a, w in profile['artista_weights'].items()}
+        new_weights[track.id_artista] = (old_count + 1) / new_total
+        profile['artista_weights'] = new_weights
+        profile['total_tracks']    = new_total
 
 
 def build_profiles_for(spotify: SpotifyManager, playlists: list, matcher_type: str) -> tuple[dict, dict]:
@@ -184,7 +205,92 @@ def train_matcher(matcher_type: str, profiles_data: dict, spotify=None, artist_n
         return matcher
 
 
-def run_pulse(force_refresh: bool = False) -> dict:
+def prompt_playlist_choice(
+    candidates: list,
+    fallback_id: str,
+    profiles_data: dict,
+    spotify,
+    track,
+) -> tuple[str, str] | None:
+    """
+    Exibe o menu de escolha de playlist e retorna (playlist_id, playlist_name).
+    Retorna None se o usuário cancelar.
+    """
+    options = candidates
+    track_in_liked    = spotify.is_track_liked(track.id)
+    track_in_fallback = track.id in profiles_data.get(fallback_id, {}).get('track_ids', [])
+
+    liked_label    = "Músicas Curtidas (já está)" if track_in_liked    else "Músicas Curtidas"
+    fallback_label = "FALLBACK_PULSE (já está)"   if track_in_fallback else "FALLBACK_PULSE"
+
+    print()
+    if options:
+        print("Onde adicionar?")
+    else:
+        print("Nenhuma playlist compatível encontrada. Escolha manualmente:")
+    for i, r in enumerate(options, 1):
+        marker = "(recomendado)" if i == 1 else ""
+        print(f"  [{i}] {r.playlist_name}: {r.score:.2%} ({r.reason}) {marker}")
+    print(f"  [l] {liked_label}")
+    print(f"  [f] {fallback_label}")
+    print(f"  [n] Não adicionar")
+    print()
+
+    valid_range = '/'.join(str(i) for i in range(1, len(options) + 1)) + '/l/f/n'
+    while True:
+        raw    = input(f"Escolha [{valid_range}] (Enter = 1): ").strip()
+        choice = raw if raw else '1'
+
+        if choice == 'l':
+            return "liked", "Músicas Curtidas"
+        elif choice == 'f':
+            return fallback_id, "FALLBACK_PULSE"
+        elif choice == 'n':
+            return None
+        elif choice.isdigit() and 1 <= int(choice) <= len(options):
+            r = options[int(choice) - 1]
+            return r.playlist_id, r.playlist_name
+        else:
+            print("  Opção inválida, tente novamente.")
+
+
+def run_cache_refresh() -> dict:
+    """Reconstrói o cache de playlists sem verificar a música tocando."""
+    t_start = time.time()
+
+    try:
+        config = load_config()
+    except RuntimeError as e:
+        return {'success': False, 'error': str(e)}
+
+    matcher_type = config.get('algorithm', 'artist_frequency')
+    cache_file   = config.get('cache_file', '.pulse_cache.json')
+    cache_path   = ROOT / cache_file
+
+    print("Conectando ao Spotify...")
+    spotify = SpotifyManager(
+        client_id=SPOTIFY_CLIENT_ID,
+        client_secret=SPOTIFY_CLIENT_SECRET,
+        redirect_uri=SPOTIFY_REDIRECT_URI
+    )
+
+    print("Buscando playlists...")
+    all_playlists = spotify.get_user_playlists()
+
+    profiles_data, snapshots, artist_names = sync_profiles(
+        spotify, all_playlists, None, matcher_type  # None força rebuild completo
+    )
+
+    if profiles_data:
+        save_cache(cache_path, matcher_type, profiles_data, snapshots, artist_names)
+        elapsed = round(time.time() - t_start, 1)
+        print(f"Cache atualizado: {len(profiles_data)} playlists [{elapsed}s | {spotify.api_calls} chamadas API]")
+        return {'success': True, 'playlists': len(profiles_data), 'elapsed': elapsed}
+
+    return {'success': False, 'error': 'Nenhum perfil gerado'}
+
+
+def run_pulse(mode: str = 'normal') -> dict:
     """
     Executa o ciclo completo do Pulse.
 
@@ -223,6 +329,8 @@ def run_pulse(force_refresh: bool = False) -> dict:
 
     if not track:
         print("Nenhuma musica tocando no momento.")
+        elapsed = round(time.time() - t_start, 1)
+        print(f"[{elapsed}s | {spotify.api_calls} chamadas API]")
         return {'success': False, 'error': 'Nenhuma música tocando'}
 
     print(f"Tocando: {track.nome} - {track.artista}")
@@ -230,7 +338,7 @@ def run_pulse(force_refresh: bool = False) -> dict:
     print("Verificando playlists...")
     all_playlists = spotify.get_user_playlists()
 
-    cached_data   = None if force_refresh else load_cache(cache_path, matcher_type)
+    cached_data   = None if (mode == 'refresh') else load_cache(cache_path, matcher_type)
     profiles_data, snapshots, artist_names = sync_profiles(
         spotify, all_playlists, cached_data, matcher_type
     )
@@ -241,13 +349,13 @@ def run_pulse(force_refresh: bool = False) -> dict:
     playlist_id   = None
     playlist_name = None
     candidates    = []
+    result        = None
 
     if profiles_data:
         matcher = train_matcher(matcher_type, profiles_data, spotify, artist_names=artist_names)
 
         if matcher_type == 'hybrid' and hasattr(matcher, 'top_matches'):
             candidates = matcher.top_matches(track, n=3)
-
             if not candidates and LASTFM_API_KEY:
                 print("Nenhum match direto. Tentando Last.fm...")
                 candidates = matcher.lastfm_fallback(track, LASTFM_API_KEY)
@@ -270,9 +378,15 @@ def run_pulse(force_refresh: bool = False) -> dict:
     for pd in profiles_data.values():
         for tid in pd.get('track_ids', []):
             track_to_playlists.setdefault(tid, []).append(pd['nome'])
+
     already_in = track_to_playlists.get(track.id, [])
     if already_in:
         print(f"\nAviso: esta música já está em: {', '.join(already_in)}")
+        if mode == 'auto':
+            elapsed = round(time.time() - t_start, 1)
+            print(f"Modo automático: não adicionando duplicata. [{elapsed}s | {spotify.api_calls} chamadas API]")
+            return {'success': False, 'error': 'Musica ja esta em uma playlist'}
+    if already_in and mode != 'dry-run':
         raw = input("Continuar mesmo assim? [s/n] (Enter = n): ").strip().lower()
         if raw != 's':
             elapsed = round(time.time() - t_start, 1)
@@ -280,57 +394,43 @@ def run_pulse(force_refresh: bool = False) -> dict:
             return {'success': False, 'error': 'Cancelado - musica ja na playlist'}
         print()
 
+    if mode == 'auto':
+        # Confirmação automática: só adiciona se o melhor match passar do score mínimo
+        min_score = config.get('auto_add_min_score', DEFAULT_AUTO_ADD_MIN_SCORE)
+        elapsed   = round(time.time() - t_start, 1)
+        if not result:
+            print(f"Sem candidatos para auto-add. [{elapsed}s | {spotify.api_calls} chamadas API]")
+            return {'success': False, 'error': 'Sem candidatos para auto-add'}
+        if result.score < min_score:
+            print(f"Score baixo ({result.score:.2%} < {min_score:.2%}). Não adicionando automaticamente. "
+                  f"[{elapsed}s | {spotify.api_calls} chamadas API]")
+            return {'success': False, 'error': 'Score abaixo do minimo para auto-add'}
+
+    if mode == 'dry-run':
+        # Nao vai adicionar nada, só mostra os candidatos e sai
+        if candidates:
+            for r in candidates:
+                print(f"  {r.playlist_name}: {r.score:.2%} ({r.reason})")
+        elif not result:
+            print("Nenhum candidato encontrado.")
+
+        elapsed = round(time.time() - t_start, 1)
+        print(f"\nIria ser adicionado em: {playlist_name or 'FALLBACK_PULSE'} [{elapsed}s | {spotify.api_calls} chamadas API]\n")
+        return {
+            'success':  True,
+            'track':    f"{track.nome} - {track.artista}",
+            'playlist': playlist_name or 'FALLBACK_PULSE',
+            'elapsed':  elapsed,
+        }
+
     # Confirmação interativa
-    if matcher_type == 'hybrid':
-        options = candidates
-        liked_num    = len(options) + 1
-        fallback_num = len(options) + 2
-        skip_num     = len(options) + 3
-
-        track_in_liked    = spotify.is_track_liked(track.id)
-        track_in_fallback = track.id in profiles_data.get(fallback_id, {}).get('track_ids', [])  
-
-        liked_label    = "Músicas Curtidas (já está)" if track_in_liked    else "Músicas Curtidas"
-        fallback_label = "FALLBACK_PULSE (já está)"   if track_in_fallback else "FALLBACK_PULSE"
-
-        print()
-        print("Onde adicionar?")
-        for i, r in enumerate(options, 1):
-            marker = "(recomendado)" if i == 1 else ""
-            print(f"  [{i}] {r.playlist_name}: {r.score:.2%} ({r.reason}) {marker}")
-        print(f"  [{liked_num}] {liked_label}")
-        print(f"  [{fallback_num}] {fallback_label}")
-        print(f"  [{skip_num}] Não adicionar")
-        print()
-
-        valid_range = '/'.join(str(i) for i in range(1, skip_num + 1))
-        while True:
-            raw    = input(f"Escolha [{valid_range}] (Enter = 1): ").strip()
-            choice = raw if raw else '1'
-
-            if not choice.isdigit():
-                print("  Opção inválida, tente novamente.")
-                continue
-
-            n = int(choice)
-            if 1 <= n <= len(options):
-                playlist_id   = options[n - 1].playlist_id
-                playlist_name = options[n - 1].playlist_name
-                break
-            elif n == liked_num:
-                playlist_id   = "liked"
-                playlist_name = "Músicas Curtidas"
-                break
-            elif n == fallback_num:
-                playlist_id   = fallback_id
-                playlist_name = "FALLBACK_PULSE"
-                break
-            elif n == skip_num:
-                elapsed = round(time.time() - t_start, 1)
-                print(f"Cancelado. [{elapsed}s | {spotify.api_calls} chamadas API]")
-                return {'success': False, 'error': 'Cancelado pelo usuario'}
-            else:
-                print("  Opção inválida, tente novamente.")
+    if matcher_type == 'hybrid' and mode != 'auto':
+        choice = prompt_playlist_choice(candidates, fallback_id, profiles_data, spotify, track)
+        if choice is None:
+            elapsed = round(time.time() - t_start, 1)
+            print(f"Cancelado. [{elapsed}s | {spotify.api_calls} chamadas API]")
+            return {'success': False, 'error': 'Cancelado pelo usuario'}
+        playlist_id, playlist_name = choice
         print()
 
     if not playlist_id:
@@ -342,22 +442,8 @@ def run_pulse(force_refresh: bool = False) -> dict:
     if new_snapshot is None:
         return {'success': False, 'error': 'Falha ao adicionar na playlist'}
 
-    # Atualiza cache localmente sem chamadas extras
     if playlist_id in profiles_data and new_snapshot:
-        profile = profiles_data[playlist_id]
-        profile.setdefault('track_ids', []).append(track.id)
-        snapshots[playlist_id] = new_snapshot
-
-        total = profile.get('total_tracks', 0)
-        if total > 0 and track.id_artista:
-            new_total = total + 1
-            old_weight = profile['artista_weights'].get(track.id_artista, 0.0)
-            old_count  = round(old_weight * total)
-            new_weights = {a: w * total / new_total for a, w in profile['artista_weights'].items()}
-            new_weights[track.id_artista] = (old_count + 1) / new_total
-            profile['artista_weights'] = new_weights
-            profile['total_tracks']    = new_total
-
+        atualiza_cache(profiles_data, snapshots, playlist_id, new_snapshot, track)
         save_cache(cache_path, matcher_type, profiles_data, snapshots, artist_names)
 
     elapsed = round(time.time() - t_start, 1)
@@ -373,7 +459,16 @@ def run_pulse(force_refresh: bool = False) -> dict:
 
 
 def main():
-    force_refresh = '--refresh' in sys.argv
+    if '--auto' in sys.argv:
+        mode = 'auto'
+    elif '--dry-run' in sys.argv:
+        mode = 'dry-run'
+    elif '--refresh' in sys.argv:
+        mode = 'refresh'
+    elif '--cache-refresh' in sys.argv:
+        mode = 'cache-refresh'
+    else:
+        mode = 'normal'
 
     try:
         config = load_config()
@@ -381,14 +476,20 @@ def main():
         print(f"Erro: {e}")
         sys.exit(1)
 
-    mode = config.get('mode', 'code')
-
-    if mode == 'hardware':
+    # Modo hardware continua vindo do config.json ("mode": "hardware")
+    if config.get('mode') == 'hardware':
         from hardware.pi_zero.handler import run_hardware_loop
         run_hardware_loop(run_pulse)
         return
 
-    result = run_pulse(force_refresh)
+    if mode == 'cache-refresh':
+        result = run_cache_refresh()
+        if not result['success']:
+            print(f"Erro: {result.get('error')}")
+            sys.exit(1)
+        return
+
+    result = run_pulse(mode)
     if not result['success']:
         print(f"Erro: {result.get('error')}")
         sys.exit(1)
