@@ -44,8 +44,8 @@ class SpotifyPlaylistAnalyzer:
                 total = response.get('total', 0)
 
             for item in response.get('items', []):
-                track = item.get('track')
-                if track and track.get('id'):
+                track = item.get('track') or item.get('item')
+                if track and track.get('id') and track.get('type') == 'track':
                     artists = track.get('artists', [])
                     first_artist = artists[0] if artists else {}
 
@@ -63,17 +63,18 @@ class SpotifyPlaylistAnalyzer:
 
         return tracks, total
     
-    def build_artist_profile(self, playlist_id: str) -> tuple[Dict[str, float], int, list]:
+    def build_artist_profile(self, playlist_id: str) -> tuple[Dict[str, float], int, list, Dict[str, str]]:
         """
         Constrói o perfil de uma playlist baseado em frequência de artistas.
 
         Returns:
-            ({ id_artista: peso_relativo }, total_tracks reportado pela API, lista de track IDs)
+            ({ id_artista: peso_relativo }, total_tracks reportado pela API, lista de track IDs,
+             { id_artista: nome_artista })
         """
         tracks, total_tracks = self.fetch_tracks(playlist_id)
 
         if not tracks:
-            return {}, total_tracks, []
+            return {}, total_tracks, [], {}
 
         track_ids = [t.id for t in tracks if t.id]
         artist_names = {t.id_artista: t.artista for t in tracks if t.id_artista and t.artista}
@@ -128,10 +129,10 @@ class SpotifyPlaylistAnalyzer:
             try:
                 artist_weights, total_tracks, track_ids, names = self.build_artist_profile(playlist_id)
                 genre_weights = self.build_genre_profile(artist_weights)
-            except Exception:
+            except Exception as e:
                 with lock:
                     done[0] += 1
-                    print(f"  [{done[0]}/{total}] {playlist_name}... pulando (sem acesso)")
+                    print(f"  [{done[0]}/{total}] {playlist_name}... pulando ({e})")
                 return None
 
             with lock:
