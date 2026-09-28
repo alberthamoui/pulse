@@ -1,5 +1,8 @@
-# Credenciais
-config/
+# Credenciais e config local (constants.py e os arquivos .example são versionados)
+config/*
+!config/constants.py
+!config/settings.example.py
+!config/config.example.json
 
 # Ambiente virtual
 pulse/

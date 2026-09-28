@@ -8,8 +8,9 @@ Detecta a música tocando no Spotify e a adiciona automaticamente na playlist ma
 pulse/
 ├── main.py              # Entry point
 ├── config/
-│   ├── settings.py      # Credenciais Spotify
-│   └── config.json      # Configuração (algoritmo, fallback, cache)
+│   ├── constants.py            # Parâmetros do algoritmo (versionado)
+│   ├── settings.example.py     # Modelo de credenciais → copiar para settings.py
+│   └── config.example.json     # Modelo de configuração → copiar para config.json
 ├── src/
 │   └── core/            # Lógica principal
 │       ├── models.py
@@ -42,11 +43,19 @@ python main.py --cache-refresh # só reconstrói o cache
 
 ## Configuração
 
-**`config/settings.py`** — credenciais do Spotify:
+Copie os arquivos de exemplo e preencha com seus dados (os arquivos copiados ficam fora do git):
+
+```bash
+cp config/settings.example.py config/settings.py
+cp config/config.example.json config/config.json
+```
+
+**`config/settings.py`** — credenciais do Spotify e Last.fm (opcional):
 ```python
-SPOTIFY_CLIENT_ID = "..."
+SPOTIFY_CLIENT_ID     = "..."
 SPOTIFY_CLIENT_SECRET = "..."
-SPOTIFY_REDIRECT_URI = "http://localhost:8888/callback"
+SPOTIFY_REDIRECT_URI  = "http://127.0.0.1:8080"
+LASTFM_API_KEY        = ""
 ```
 
 **`config/config.json`** — parâmetros do sistema:
@@ -55,9 +64,12 @@ SPOTIFY_REDIRECT_URI = "http://localhost:8888/callback"
   "algorithm": "hybrid",
   "fallback_playlist_id": "...",
   "cache_file": ".pulse_cache.json",
-  "auto_add_min_score": 0.5
+  "auto_add_min_score": 0.5,
+  "mode": "code"
 }
 ```
+
+**`config/constants.py`** — parâmetros do algoritmo (pesos, Last.fm, threads). É versionado, sem dados sensíveis.
 
 Algoritmos disponíveis: `artist_frequency`, `hybrid`, `audio_features`.
 
