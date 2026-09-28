@@ -10,8 +10,10 @@ PULSE monitora a música tocando no Spotify e decide automaticamente em qual das
 pulse/
 ├── main.py                        # Orquestrador principal
 ├── config/
-│   ├── settings.py                # Credenciais Spotify + Last.fm
-│   └── config.json                # Configuração do sistema
+│   ├── constants.py               # Parâmetros do algoritmo (versionado)
+│   ├── settings.py                # Credenciais Spotify + Last.fm (local, fora do git)
+│   ├── config.json                # Configuração do sistema (local, fora do git)
+│   └── *.example.*                # Modelos versionados de settings.py e config.json
 ├── src/
 │   └── core/
 │       ├── models.py              # Data classes
