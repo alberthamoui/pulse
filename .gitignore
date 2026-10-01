@@ -27,3 +27,4 @@ src/.cache
 # Local apenas
 notebooks/
 docs/notes.md
+*.mhtml

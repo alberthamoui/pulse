@@ -1,0 +1,5 @@
+.pio/
+.vscode/
+
+# Credenciais (o secrets.example.h é versionado)
+include/secrets.h
