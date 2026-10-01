@@ -6,6 +6,7 @@
 #include "config.h"
 #include "display.h"
 #include "fake_backend.h"
+#include "profiles.h"
 #include "spotify_client.h"
 #include "state_machine.h"
 
@@ -19,7 +20,8 @@ namespace {
 Display display;
 Buttons buttons;
 SpotifyClient spotify;
-FakeBackend backend;
+Profiles profiles(spotify);
+FakeBackend backend(profiles);
 StateMachine machine(display, buttons, backend);
 
 // Mostra uma mensagem por durationMs, redesenhando para os textos longos rolarem.
@@ -44,6 +46,14 @@ bool connectWifi() {
       Serial.printf("[wifi] falhou (status %d)\n", WiFi.status());
       return false;
     }
+    // O roteador às vezes recusa a primeira tentativa: tenta de novo até o timeout
+    const wl_status_t status = WiFi.status();
+    if (status == WL_CONNECT_FAILED || status == WL_NO_SSID_AVAIL) {
+      Serial.printf("[wifi] tentativa recusada (status %d), tentando de novo\n", status);
+      WiFi.disconnect();
+      delay(500);
+      WiFi.begin(secrets::WIFI_SSID, secrets::WIFI_PASSWORD);
+    }
     display.progress("Conectando Wi-Fi", elapsed * 100 / cfg::WIFI_TIMEOUT_MS);
     delay(200);
   }
@@ -52,7 +62,7 @@ bool connectWifi() {
   return true;
 }
 
-// Etapa 2: Wi-Fi, renovação do token e GET /me. O resto ainda usa dados falsos.
+// Wi-Fi, token, GET /me e sync dos perfis (só o que mudou desde o último boot).
 void bootOnline() {
   if (!connectWifi()) {
     showMessage(errorMessage(BackendError::NoWifi), "", cfg::ERROR_MS);
@@ -69,6 +79,11 @@ void bootOnline() {
 
   Serial.printf("[spotify] usuario: %s (id %s)\n", me.displayName.c_str(), me.id.c_str());
   showMessage("Olá,", me.displayName.c_str(), cfg::GREETING_MS);
+
+  profiles.setUserId(me.id);
+  const BackendError syncErr =
+      profiles.sync(false, [](uint8_t pct) { display.progress("Sincronizando", pct); });
+  if (syncErr != BackendError::None) showMessage(errorMessage(syncErr), "", cfg::ERROR_MS);
 }
 
 }  // namespace
@@ -76,12 +91,13 @@ void bootOnline() {
 void setup() {
   Serial.begin(115200);
   Serial.println();
-  Serial.println("[pulse] boot (etapa 2: Wi-Fi + token + /me)");
+  Serial.println("[pulse] boot (etapa 3: playlists e perfis reais, musica falsa)");
 
   display.begin();
   buttons.begin();
   if (!LittleFS.begin(true)) Serial.println("[fs] falha ao montar o LittleFS");
   spotify.begin();
+  profiles.begin();
 
   bootOnline();
   machine.begin();

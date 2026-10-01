@@ -62,6 +62,10 @@ void SpotifyClient::begin() {
 #else
   tls_.setCACert(SPOTIFY_ROOT_CAS);
 #endif
+  // O WiFiClientSecure tem um _timeout próprio que esconde o do Stream, então o
+  // setTimeout() do HTTPClient não chega no readBytes() usado pelo ArduinoJson,
+  // que fica no padrão de 1 s e corta respostas grandes no meio.
+  static_cast<Stream&>(tls_).setTimeout(cfg::HTTP_TIMEOUT_MS);
   loadRefreshToken();
 }
 
@@ -192,7 +196,7 @@ BackendError SpotifyClient::call(const char* method, const String& url, const St
       uint32_t wait = http.header("Retry-After").toInt();
       http.end();
       if (wait == 0) wait = 1;
-      if (wait > cfg::MAX_RETRY_AFTER_S) {
+      if (wait > maxRetryAfterS_) {
         Serial.printf("[api] 429: Retry-After de %us, desistindo\n", wait);
         return BackendError::RateLimited;
       }
