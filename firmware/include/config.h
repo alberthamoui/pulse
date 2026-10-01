@@ -31,4 +31,12 @@ constexpr size_t MAX_SUGGESTIONS = 5;
 constexpr uint32_t I2C_CLOCK_HZ = 400000;
 constexpr uint8_t LIST_ROWS = 4;
 
+// Rede e Spotify
+constexpr uint32_t WIFI_TIMEOUT_MS = 20000;
+constexpr uint32_t HTTP_TIMEOUT_MS = 10000;
+constexpr uint32_t TOKEN_MARGIN_MS = 60000;  // renova o access token antes de expirar
+constexpr uint32_t MAX_RETRY_AFTER_S = 10;   // 429: espera até isso; acima, desiste
+constexpr uint8_t MAX_ATTEMPTS = 3;          // por chamada, contando 401 e 429
+constexpr uint32_t GREETING_MS = 2500;
+
 }  // namespace cfg
