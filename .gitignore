@@ -3,6 +3,8 @@ config/*
 !config/constants.py
 !config/settings.example.py
 !config/config.example.json
+brag-output/
+CODE_REVIEW.md
 
 # Ambiente virtual
 pulse/
