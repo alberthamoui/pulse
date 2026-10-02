@@ -93,7 +93,7 @@ void StateMachine::loadNowPlaying() {
   if (err != BackendError::None) {
     enterError(err);
   } else {
-    manual_ = !backend_.rank(track_, candidates_);
+    manual_ = !backend_.rank(track_, candidates_, progress);
     progress(100);
     if (candidates_.empty()) {
       enterError(BackendError::NoPlaylists);

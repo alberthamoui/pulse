@@ -28,6 +28,10 @@ constexpr uint32_t SCROLL_PX_PER_S = 30;
 constexpr size_t MAX_SUGGESTIONS = 5;
 constexpr uint8_t PAGE_LIMIT = 50;  // máximo da API em /me/playlists e /playlists/{id}/items
 
+// Last.fm: sem match direto, pontua as playlists pelos artistas parecidos
+constexpr uint8_t LASTFM_SIMILAR_LIMIT = 50;  // artistas parecidos buscados
+constexpr size_t LASTFM_SUGGESTIONS = 3;
+
 // Display
 constexpr uint32_t I2C_CLOCK_HZ = 400000;
 constexpr uint8_t LIST_ROWS = 4;

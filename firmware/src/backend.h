@@ -13,8 +13,9 @@ struct NowPlaying {
   String artistName;
 };
 
-// Opção da tela de escolha: uma playlist candidata (weight = n / total do
-// artista na playlist), a playlist de fallback ou cancelar.
+// Opção da tela de escolha: uma playlist candidata, a playlist de fallback ou
+// cancelar. O weight de uma playlist é n / total do artista na playlist ou, se
+// similar, o score dos artistas parecidos segundo o Last.fm.
 struct Candidate {
   enum class Kind : uint8_t { Playlist, Fallback, Cancel };
 
@@ -22,6 +23,7 @@ struct Candidate {
   String name;
   float weight = 0.0f;
   bool hasTrack = false;  // a música já está nessa playlist
+  bool similar = false;   // weight veio do Last.fm, não do próprio artista
   Kind kind = Kind::Playlist;
 };
 
@@ -48,9 +50,12 @@ class Backend {
 
   // Preenche out com as playlists ordenadas pelo peso do artista da música (no
   // máximo cfg::MAX_SUGGESTIONS com peso > 0). Se o artista não estiver em
-  // nenhuma, devolve todas as playlists para escolha manual e retorna false.
-  // Inclui também as opções de fallback e de cancelar.
-  virtual bool rank(const NowPlaying& track, std::vector<Candidate>& out) = 0;
+  // nenhuma, tenta os artistas parecidos do Last.fm (no máximo
+  // cfg::LASTFM_SUGGESTIONS); se nem assim houver match, devolve todas as
+  // playlists para escolha manual e retorna false. Inclui também as opções de
+  // fallback e de cancelar.
+  virtual bool rank(const NowPlaying& track, std::vector<Candidate>& out,
+                    const ProgressFn& progress) = 0;
 
   virtual BackendError addTrack(const NowPlaying& track, const Candidate& playlist,
                                 const ProgressFn& progress) = 0;

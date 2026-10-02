@@ -23,6 +23,22 @@ constexpr char TOKEN_URL[] = "https://accounts.spotify.com/api/token";
 // Se o secrets.h mudar (nova autorização), o arquivo salvo é ignorado.
 constexpr char AUTH_FILE[] = "/auth.txt";
 
+// Erro de transporte (status < 0): sem Wi-Fi ou falha de conexão/TLS.
+BackendError transportError() {
+  return WiFi.status() == WL_CONNECTED ? BackendError::Api : BackendError::NoWifi;
+}
+
+void logHttpError(const char* tag, const char* what, HTTPClient& http, int status) {
+  if (status > 0) {
+    // Os corpos de erro do Spotify são JSONs curtos, sem segredos
+    Serial.printf("[%s] %s: HTTP %d %s\n", tag, what, status, http.getString().c_str());
+  } else {
+    Serial.printf("[%s] %s: %s\n", tag, what, HTTPClient::errorToString(status).c_str());
+  }
+}
+
+}  // namespace
+
 String urlEncode(const String& s) {
   static const char HEX_DIGITS[] = "0123456789ABCDEF";
   String out;
@@ -39,22 +55,6 @@ String urlEncode(const String& s) {
   }
   return out;
 }
-
-// Erro de transporte (status < 0): sem Wi-Fi ou falha de conexão/TLS.
-BackendError transportError() {
-  return WiFi.status() == WL_CONNECTED ? BackendError::Api : BackendError::NoWifi;
-}
-
-void logHttpError(const char* tag, const char* what, HTTPClient& http, int status) {
-  if (status > 0) {
-    // Os corpos de erro do Spotify são JSONs curtos, sem segredos
-    Serial.printf("[%s] %s: HTTP %d %s\n", tag, what, status, http.getString().c_str());
-  } else {
-    Serial.printf("[%s] %s: %s\n", tag, what, HTTPClient::errorToString(status).c_str());
-  }
-}
-
-}  // namespace
 
 void SpotifyClient::begin() {
 #ifdef PULSE_INSECURE_TLS
@@ -174,8 +174,13 @@ BackendError SpotifyClient::call(const char* method, const String& url, const St
   const String fullUrl = url.startsWith("https://") ? url : String(API_BASE) + url;
   bool retriedAfter401 = false;
   status = 0;
+  // Só o GET é repetido depois de falha de rede: um POST pode ter chegado ao
+  // Spotify antes da conexão cair, e repetir duplicaria a música na playlist
+  const bool idempotent = strcmp(method, "GET") == 0;
 
   for (uint8_t attempt = 0; attempt < cfg::MAX_ATTEMPTS; ++attempt) {
+    const bool canRetry =
+        idempotent && WiFi.status() == WL_CONNECTED && attempt + 1 < cfg::MAX_ATTEMPTS;
     const BackendError tokenErr = ensureToken();
     if (tokenErr != BackendError::None) return tokenErr;
 
@@ -211,6 +216,17 @@ BackendError SpotifyClient::call(const char* method, const String& url, const St
       continue;
     }
 
+    // Falha de conexão (TLS ou rede): costuma passar na tentativa seguinte. A
+    // memória livre no log mostra se o TLS ficou sem heap para o handshake.
+    if (status < 0 && canRetry) {
+      http.end();
+      Serial.printf("[api] %s %s: %s (heap livre %u, maior bloco %u), repetindo\n", method,
+                    url.c_str(), HTTPClient::errorToString(status).c_str(), ESP.getFreeHeap(),
+                    ESP.getMaxAllocHeap());
+      delay(500);
+      continue;
+    }
+
     if (status < 200 || status >= 300) {
       logHttpError("api", (String(method) + " " + url).c_str(), http, status);
       http.end();
@@ -225,6 +241,12 @@ BackendError SpotifyClient::call(const char* method, const String& url, const St
     const DeserializationError jsonErr =
         deserializeJson(out, http.getStream(), DeserializationOption::Filter(filter));
     http.end();
+    // IncompleteInput: a conexão caiu no meio da resposta
+    if (jsonErr == DeserializationError::IncompleteInput && canRetry) {
+      Serial.printf("[api] %s %s: resposta cortada, repetindo\n", method, url.c_str());
+      delay(500);
+      continue;
+    }
     if (jsonErr) {
       Serial.printf("[api] %s %s: JSON invalido (%s)\n", method, url.c_str(), jsonErr.c_str());
       return BackendError::Api;

@@ -4,6 +4,8 @@
 
 #include <algorithm>
 
+#include "config.h"
+#include "lastfm.h"
 #include "profiles.h"
 #include "secrets.h"
 #include "spotify_client.h"
@@ -47,7 +49,8 @@ BackendError SpotifyBackend::fetchNowPlaying(NowPlaying& out, const ProgressFn& 
   return BackendError::None;
 }
 
-bool SpotifyBackend::rank(const NowPlaying& track, std::vector<Candidate>& out) {
+bool SpotifyBackend::rank(const NowPlaying& track, std::vector<Candidate>& out,
+                          const ProgressFn& progress) {
   profiles_.weights(track, out);
 
   // A fallback vira uma opção fixa, então sai da lista comum
@@ -71,9 +74,25 @@ bool SpotifyBackend::rank(const NowPlaying& track, std::vector<Candidate>& out) 
   if (!fallback.playlistId.isEmpty()) extras.push_back(fallback);
   extras.push_back(cancel);
 
+  // Artista em nenhuma playlist: as sugestões vêm dos artistas parecidos
+  size_t maxCount = cfg::MAX_SUGGESTIONS;
+  const bool direct = std::any_of(out.begin(), out.end(),
+                                  [](const Candidate& c) { return c.weight > 0.0f; });
+  if (!direct && lastFmEnabled()) {
+    Serial.printf("[lastfm] %s em nenhuma playlist, buscando artistas parecidos\n",
+                  track.artistName.c_str());
+    progress(80);
+    std::vector<SimilarArtist> similar;
+    if (fetchSimilarArtists(track.artistName, similar)) {
+      progress(90);
+      profiles_.similarWeights(similar, out);
+      maxCount = cfg::LASTFM_SUGGESTIONS;
+    }
+  }
+
   // Com ranking, a melhor sugestão continua sendo a primeira. Sem match, a
   // fallback é o destino mais provável, e Cancelar não fica no fim de uma lista longa.
-  const bool matched = selectCandidates(out);
+  const bool matched = selectCandidates(out, maxCount);
   out.insert(matched ? out.end() : out.begin(), extras.begin(), extras.end());
   return matched;
 }

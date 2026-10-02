@@ -19,4 +19,8 @@ constexpr char SPOTIFY_REFRESH_TOKEN[] = "seu-refresh-token";
 // config/config.json). Vazio esconde a opção "Fallback".
 constexpr char FALLBACK_PLAYLIST_ID[] = "";
 
+// Chave da API do Last.fm (a mesma LASTFM_API_KEY do config/settings.py). Sem
+// match direto, as sugestões vêm dos artistas parecidos. Vazio desliga.
+constexpr char LASTFM_API_KEY[] = "";
+
 }  // namespace secrets
