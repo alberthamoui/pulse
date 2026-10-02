@@ -1,10 +1,12 @@
 """
-Matcher híbrido: combina frequência de artista + overlap de gênero.
+Matcher híbrido: TF-IDF do artista + co-ocorrência entre artistas + gênero.
 
-- Artista conhecido na playlist: score = 0.8 * artist_weight + 0.2 * genre_overlap
-- Artista desconhecido:           score = genre_overlap
+Para o artista X da música e cada playlist p:
+    direct   = tf(X, p) * idf(X)
+    indirect = soma de jaccard(X, Y) * tf(Y, p) * idf(Y) para os outros artistas Y de p
+    score    = ALPHA * (direct + BETA * indirect) + (1 - ALPHA) * genre_overlap
 
-Resolve casos onde o artista não está em nenhuma playlist mas seus gêneros coincidem.
+Se nenhuma playlist pontuar, lastfm_fallback() pontua pelos artistas parecidos do Last.fm.
 """
 
 import math

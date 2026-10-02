@@ -28,3 +28,6 @@ src/.cache
 notebooks/
 docs/notes.md
 *.mhtml
+
+# pytest
+.pytest_cache/

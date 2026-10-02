@@ -46,9 +46,10 @@ class Profiles {
   // e se a música já está nela.
   void weights(const NowPlaying& track, std::vector<Candidate>& out) const;
 
-  // Troca o peso das playlists em out pelo score dos artistas parecidos, como
-  // o lastfm_fallback do Python: soma de match * tf * idf de cada artista
-  // parecido presente na playlist, com tf = n / total e idf = ln(N / df).
+  // Troca o peso das playlists em out pelo score dos artistas parecidos: soma
+  // de match * tf * idf de cada artista parecido presente na playlist, com
+  // idf = ln(N / df). Mesma fórmula do lastfm_fallback do Python, mas com
+  // tf = n / total, sem o Laplace smoothing, então os valores diferem um pouco.
   // Os artistas são casados pelo nome, sem diferenciar maiúsculas.
   void similarWeights(const std::vector<SimilarArtist>& similar,
                       std::vector<Candidate>& out) const;

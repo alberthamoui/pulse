@@ -1,9 +1,11 @@
 # Pulse
 
+[![CI](https://github.com/alberthamoui/pulse/actions/workflows/ci.yml/badge.svg)](https://github.com/alberthamoui/pulse/actions/workflows/ci.yml)
 ![Python](https://img.shields.io/badge/python-3.10%2B-blue)
+![ESP32](https://img.shields.io/badge/ESP32-PlatformIO-orange)
 ![License: MIT](https://img.shields.io/badge/license-MIT-green)
 
-Pulse looks at the song currently playing on Spotify and adds it to the playlist where it fits best.
+Pulse looks at the song currently playing on Spotify and adds it to the playlist where it fits best. It runs as a Python CLI and as a standalone ESP32 device with two buttons and an OLED screen.
 
 I have around 50 playlists, and every time I heard something I liked I had to stop and think about where it should go. Pulse does that part for me: it builds a profile of each playlist from the artists in it, scores the current track against all of them and suggests the top 3.
 
@@ -52,6 +54,19 @@ score    = 0.8 * (direct + 0.5 * indirect) + 0.2 * genre_overlap
 
 There's a longer write-up of the internals (in Portuguese) in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
+## ESP32 device
+
+<!-- Photo or GIF of the device: docs/device.jpg -->
+
+The same idea without a computer: an ESP32 with a 1.3" OLED and two buttons. Press one while something plays on Spotify (on any device), scroll through the suggested playlists and confirm.
+
+- Written in C++ with PlatformIO and the Arduino framework; talks to the Spotify Web API and Last.fm directly over HTTPS with embedded root CAs.
+- Playlist profiles live on the ESP32's flash (LittleFS) and are only re-read when a playlist's `snapshot_id` changes, so a normal boot takes about 10 s.
+- JSON responses are parsed as a stream with filters, so large responses never sit in RAM.
+- Ranks playlists by artist frequency and falls back to Last.fm similar artists for unknown artists, like the Python version.
+
+Wiring, setup and the problems solved along the way (heap fragmentation during TLS, a shadowed stream timeout, safe retries) are in [firmware/README.md](firmware/README.md).
+
 ## Setup
 
 You need Python 3.10+ and a Spotify app from the [developer dashboard](https://developer.spotify.com/dashboard). A [Last.fm API key](https://www.last.fm/api/account/create) is optional and only used for unknown artists.
@@ -95,15 +110,27 @@ python main.py --cache-refresh  # only rebuilds the cache
 
 The first run opens the browser to log in to Spotify and reads all your playlists, so it takes a bit longer. If the song is already in one of your playlists, Pulse warns you before adding it again.
 
+## Tests
+
+The scoring is covered by unit tests that use fake profiles and never touch the network:
+
+```bash
+pip install -r requirements-dev.txt
+pytest
+```
+
+CI runs them on Python 3.10 and 3.12 and also builds both firmware environments.
+
 ## Limitations
 
 - Spotify returns 403 on the artist genres endpoint for apps without extended access, so `genre_overlap` is always 0 right now and the ranking is based only on artists.
 - The co-occurrence signal only works for artists that are already in at least one playlist.
 - Only the main artist of a track is scored. Featured artists are already read from the API but not used yet.
+- The ESP32 uses a simpler direct ranking (artist frequency, no TF-IDF or co-occurrence) to keep matching to a single pass over flash.
 
 ## Next steps
 
-- A small hardware version with a Raspberry Pi Zero, a button and an OLED screen, so I can save a song without opening the laptop. The parts are on the way; there's an early MicroPython prototype of the interface in `hardware/pico/`.
+- Bring TF-IDF and co-occurrence to the ESP32 ranking.
 - Normalize the score so the `--auto` threshold actually means something.
 - Use featured artists in the scoring.
 - Learn from my choices when I pick a different playlist than the suggested one.

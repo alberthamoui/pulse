@@ -12,7 +12,7 @@ class Matcher(ABC):
     Classe abstrata para algoritmos que fazem matching de músicas com playlists.
     
     Um matcher recebe uma música e retorna a melhor playlist para ela
-    baseado em alguma estratégia (frequência de artistas, features de áudio, etc).
+    baseado em alguma estratégia (frequência de artistas, TF-IDF, etc).
     """
     
     @abstractmethod

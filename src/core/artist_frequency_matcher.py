@@ -1,7 +1,7 @@
 """
 Matcher baseado em Frequência Relativa de Artistas.
 
-Implementa o algoritmo do notebook base_test.ipynb:
+Algoritmo base, mais simples que o HybridMatcher:
 - Cada playlist tem um perfil { id_artista: peso_relativo }
 - Uma música é alocada na playlist onde seu artista tem maior peso
 """
