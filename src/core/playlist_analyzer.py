@@ -10,7 +10,7 @@ import threading
 from collections import Counter
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import List, Dict, Optional
-from .models import Track, PlaylistProfile, AudioFeatures
+from .models import Track, PlaylistProfile
 from .client import SpotifyManager
 from config.constants import LAPLACE_ALPHA, PLAYLIST_WORKERS
 
@@ -160,42 +160,3 @@ class SpotifyPlaylistAnalyzer:
         print(f"Análise concluída em {elapsed:.1f}s ({len(profiles)}/{total} playlists).")
         return profiles, artist_names
     
-    def fetch_playlist_tracks_with_features(self, playlist_id: str, features_cache: dict = None) -> tuple[List[Track], List[Optional[AudioFeatures]]]:
-        """
-        Extrai faixas de uma playlist junto com suas features de áudio.
-        
-        Args:
-            playlist_id: ID da playlist
-            features_cache: Dicionário com features de áudio em cache
-        Returns:
-            Tupla (lista de Track, lista de AudioFeatures)
-        """
-        tracks, _ = self.fetch_tracks(playlist_id)
-        features_list = []
-        to_fetch = []
-
-        for track in tracks:
-            if features_cache and track.id in features_cache:
-                # Já em cache
-                features_list.append(features_cache[track.id])
-            else:
-                # Novo, precisa buscar
-                to_fetch.append(track.id)
-
-        for i in range(0, len(tracks), 100):
-            batch = tracks[i:i+100]
-            track_ids = [t.id for t in batch]
-            
-
-
-            try:
-                features_response = self.spotify.sp.audio_features(track_ids)
-                features_list.extend(features_response)
-            except Exception as e:
-                print(f"  Erro ao buscar features: {e}")
-                features_list.extend([None] * len(batch))
-            # Salva no cache
-            for track_id, feat in zip(batch, features_response):
-                features_cache[track_id] = feat
-
-        return tracks, features_list

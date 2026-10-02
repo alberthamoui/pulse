@@ -20,7 +20,7 @@ import json
 import time
 from datetime import datetime, timezone
 import spotipy
-from core import SpotifyManager, SpotifyPlaylistAnalyzer, ArtistFrequencyMatcher, VibeMatcher, HybridMatcher
+from core import SpotifyManager, SpotifyPlaylistAnalyzer, ArtistFrequencyMatcher, HybridMatcher
 from core.models import PlaylistProfile
 from config.settings import SPOTIFY_CLIENT_ID, SPOTIFY_CLIENT_SECRET, SPOTIFY_REDIRECT_URI, LASTFM_API_KEY
 
@@ -113,20 +113,6 @@ def build_profiles_for(spotify: SpotifyManager, playlists: list, matcher_type: s
         }
         return profiles_data, artist_names
 
-    elif matcher_type == 'audio_features':
-        playlist_data = {}
-        for pl in playlists:
-            print(f"  Analisando: {pl['name']}...")
-            try:
-                tracks, features_list = analyzer.fetch_playlist_tracks_with_features(pl['id'])
-                playlist_data[pl['id']] = {
-                    'name': pl['name'],
-                    'features': [f for f in features_list if f],
-                }
-            except Exception as e:
-                print(f"  Erro ao analisar {pl['name']}: {e}")
-        return playlist_data, {}
-
     raise RuntimeError(f"Algoritmo desconhecido: '{matcher_type}'")
 
 
@@ -199,10 +185,7 @@ def train_matcher(matcher_type: str, profiles_data: dict, spotify=None, artist_n
         matcher.train(profiles, artist_names=artist_names)
         return matcher
 
-    elif matcher_type == 'audio_features':
-        matcher = VibeMatcher()
-        matcher.train_with_names(profiles_data)
-        return matcher
+    raise RuntimeError(f"Algoritmo desconhecido: '{matcher_type}'")
 
 
 def prompt_playlist_choice(
@@ -363,11 +346,8 @@ def run_pulse(mode: str = 'normal') -> dict:
                     print("Match via Last.fm encontrado.")
 
             result = candidates[0] if candidates else None
-        elif matcher_type == 'artist_frequency':
-            result = matcher.match(track)
         else:
-            features = spotify.get_audio_features(track.id)
-            result   = matcher.match(track, audio_features=features) if features else None
+            result = matcher.match(track)
 
         if result:
             playlist_id   = result.playlist_id
@@ -469,18 +449,6 @@ def main():
         mode = 'cache-refresh'
     else:
         mode = 'normal'
-
-    try:
-        config = load_config()
-    except RuntimeError as e:
-        print(f"Erro: {e}")
-        sys.exit(1)
-
-    # Modo hardware continua vindo do config.json ("mode": "hardware")
-    if config.get('mode') == 'hardware':
-        from hardware.pi_zero.handler import run_hardware_loop
-        run_hardware_loop(run_pulse)
-        return
 
     if mode == 'cache-refresh':
         result = run_cache_refresh()

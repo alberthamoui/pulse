@@ -42,34 +42,9 @@ class MatchResult:
     playlist_id: str
     playlist_name: str
     score: float  # 0.0 a 1.0
-    match_type: str  # 'artist_frequency' ou 'audio_features'
+    match_type: str  # 'artist_frequency', 'hybrid' ou 'lastfm'
     reason: str = ""
 
     def __repr__(self) -> str:
         return f"MatchResult({self.playlist_name!r}, score={self.score:.2%})"
 
-
-@dataclass
-class AudioFeatures:
-    """Features de áudio extraídas do Spotify Audio Analysis API."""
-    track_id: str
-    energy: float
-    danceability: float
-    valence: float
-    tempo: float
-    acousticness: Optional[float] = None
-    instrumentalness: Optional[float] = None
-    liveness: Optional[float] = None
-    
-    def to_dict(self) -> Dict[str, Any]:
-        """Converte para dicionário (compatível com API do Spotify)."""
-        return {
-            'id': self.track_id,
-            'energy': self.energy,
-            'danceability': self.danceability,
-            'valence': self.valence,
-            'tempo': self.tempo,
-            'acousticness': self.acousticness,
-            'instrumentalness': self.instrumentalness,
-            'liveness': self.liveness,
-        }

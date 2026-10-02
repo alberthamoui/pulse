@@ -1,6 +1,1 @@
 spotipy>=2.24.0
-numpy>=1.26.0
-gpiozero            # Raspberry Pi Zero — botao e LED
-luma.oled           # Raspberry Pi Zero — display OLED SSD1306
-Pillow              # dependencia do luma.oled
-pyserial>=3.5       # modo Pico: bridge serial

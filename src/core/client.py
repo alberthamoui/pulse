@@ -1,8 +1,7 @@
 """
 Cliente Spotify - Gerencia a comunicação com a API do Spotify.
 
-Fornece métodos para autenticação, busca de músicas, features de áudio
-e gerenciamento de playlists.
+Fornece métodos para autenticação, busca de músicas e gerenciamento de playlists.
 """
 
 import json
@@ -10,7 +9,7 @@ import spotipy
 from pathlib import Path
 from spotipy.oauth2 import SpotifyOAuth
 from typing import List, Dict, Optional
-from .models import Track, AudioFeatures
+from .models import Track
 
 _GENRES_FLAG_FILE = Path(__file__).parent.parent.parent / '.pulse_genres_flag.json'
 
@@ -98,23 +97,6 @@ class SpotifyManager:
             raise  # relança erros graves para main.py tratar
         except Exception as e:
             print(f"Erro inesperado ao obter música atual: {e}")
-            return None
-
-    def get_audio_features(self, track_id: str) -> Optional[Dict]:
-        """
-        Obtém features de áudio de uma música.
-        
-        Args:
-            track_id: ID da música no Spotify
-            
-        Returns:
-            Dict com features (energy, danceability, etc) ou None
-        """
-        try:
-            features = self.sp.audio_features([track_id])
-            return features[0] if features else None
-        except Exception as e:
-            print(f"Erro ao obter features: {e}")
             return None
 
     def get_user_playlists(self) -> List[Dict]:
@@ -208,25 +190,6 @@ class SpotifyManager:
         except Exception:
             return False
 
-    def get_playlist_track_ids(self, playlist_id: str) -> set:
-        ids = set()
-        try:
-            offset = 0
-            while True:
-                result = self.sp.playlist_items(
-                    playlist_id, fields="items(track(id)),next", limit=100, offset=offset
-                )
-                for item in result.get('items', []):
-                    t = item.get('track')
-                    if t and t.get('id'):
-                        ids.add(t['id'])
-                if not result.get('next'):
-                    break
-                offset += 100
-        except Exception:
-            pass
-        return ids
-
     def add_track_to_playlist(self, playlist_id: str, track_id: str) -> Optional[str]:
         """
         Adiciona uma música a uma playlist ou às Músicas Curtidas (id="liked").
@@ -244,31 +207,3 @@ class SpotifyManager:
             print(f"Erro ao adicionar música: {e}")
             return None
 
-    # Métodos legados para compatibilidade
-    def obter_musica_atual(self) -> Optional[Dict]:
-        """[DEPRECATED] Use get_current_track() em vez disso."""
-        track = self.get_current_track()
-        if track:
-            return {
-                "id": track.id,
-                "nome": track.nome,
-                "artista": track.artista,
-                "id_artista": track.id_artista
-            }
-        return None
-
-    def obter_audio_features(self, track_id: str) -> Optional[Dict]:
-        """[DEPRECATED] Use get_audio_features() em vez disso."""
-        return self.get_audio_features(track_id)
-
-    def obter_musicas_da_playlist(self, playlist_id: str) -> List[str]:
-        """[DEPRECATED] Use SpotifyPlaylistAnalyzer.fetch_tracks() em vez disso."""
-        try:
-            resultados = self.sp.playlist_items(playlist_id, fields="items(track(id))")
-            return [item['track']['id'] for item in resultados.get('items', []) if item.get('track')]
-        except Exception:
-            return []
-
-    def adicionar_na_playlist(self, playlist_id: str, track_id: str) -> None:
-        """[DEPRECATED] Use add_track_to_playlist() em vez disso."""
-        self.add_track_to_playlist(playlist_id, track_id)
