@@ -124,11 +124,17 @@ BackendError SpotifyClient::refreshAccessToken() {
 
   const int status =
       http.POST("grant_type=refresh_token&refresh_token=" + urlEncode(refreshToken_));
-  if (status != 200) {
-    // 400 invalid_grant: refresh token revogado ou gerado com outro client id
+  if (status <= 0) {
     logHttpError("auth", "falha ao renovar o token", http, status);
     http.end();
-    return status > 0 ? BackendError::Api : transportError();
+    return transportError();
+  }
+  if (status != 200) {
+    // 400 invalid_grant: refresh token expirado (180 dias), revogado ou de outro client id
+    const String body = http.getString();
+    http.end();
+    Serial.printf("[auth] falha ao renovar o token: HTTP %d %s\n", status, body.c_str());
+    return body.indexOf("invalid_grant") >= 0 ? BackendError::AuthExpired : BackendError::Api;
   }
 
   JsonDocument filter;

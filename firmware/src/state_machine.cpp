@@ -40,7 +40,7 @@ void StateMachine::enterIdle() {
 
 void StateMachine::enterError(BackendError err) {
   line1_ = errorMessage(err);
-  line2_ = "";
+  line2_ = errorDetail(err);
   Serial.printf("[sm] erro: %s\n", line1_.c_str());
   enter(State::Error);
 }
@@ -93,7 +93,7 @@ void StateMachine::loadNowPlaying() {
   if (err != BackendError::None) {
     enterError(err);
   } else {
-    manual_ = !backend_.rank(track_.artistId, candidates_);
+    manual_ = !backend_.rank(track_, candidates_);
     progress(100);
     if (candidates_.empty()) {
       enterError(BackendError::NoPlaylists);
@@ -121,6 +121,14 @@ void StateMachine::moveSelection() {
 
 void StateMachine::confirmSelection() {
   const Candidate chosen = candidates_[selected_];
+  if (chosen.hasTrack) {
+    Serial.printf("[sm] ja esta em %s, nada adicionado\n", chosen.name.c_str());
+    line1_ = "Já está em";
+    line2_ = chosen.name;
+    enter(State::Done);
+    return;
+  }
+
   enter(State::Loading);
   auto progress = [this](uint8_t pct) { display_.progress("Adicionando", pct); };
   progress(0);

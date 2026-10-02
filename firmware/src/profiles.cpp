@@ -5,7 +5,6 @@
 #include <sys/stat.h>
 
 #include <algorithm>
-#include <map>
 
 #include "config.h"
 #include "spotify_client.h"
@@ -13,6 +12,8 @@
 namespace {
 
 constexpr char PROFILE_DIR[] = "/p";
+constexpr char FORMAT_TAG[] = "PULSE2";
+constexpr int HEADER_LINES = 4;  // formato, snapshot, nome e total
 
 String profilePath(const String& id) { return String(PROFILE_DIR) + "/" + id + ".txt"; }
 
@@ -28,9 +29,16 @@ String readLine(File& f) {
   return line;
 }
 
-// Procura a linha "<artistId> <n>" depois do cabeçalho e devolve n (0 se não
-// achar). Lê em blocos: bem mais rápido que readStringUntil por linha.
-uint32_t countFor(File& f, const String& artistId) {
+bool idEquals(const char* s, size_t len, const String& id) {
+  return len == id.length() && strncmp(s, id.c_str(), len) == 0;
+}
+
+// Percorre o perfil depois do cabeçalho: quantas faixas são de artistId e se
+// trackId já está na playlist. Lê em blocos, bem mais rápido que readStringUntil.
+void scanProfile(File& f, const String& artistId, const String& trackId, uint32_t& count,
+                 bool& hasTrack) {
+  count = 0;
+  hasTrack = false;
   char buf[256];
   char line[64];
   size_t len = 0;
@@ -38,21 +46,29 @@ uint32_t countFor(File& f, const String& artistId) {
   int n;
   while ((n = f.read(reinterpret_cast<uint8_t*>(buf), sizeof(buf))) > 0) {
     for (int i = 0; i < n; ++i) {
-      if (buf[i] != '\n') {
-        if (len < sizeof(line) - 1) line[len++] = buf[i];
+      const char c = buf[i];
+      if (c == '\r') continue;
+      if (c != '\n') {
+        if (len < sizeof(line) - 1) line[len++] = c;
         continue;
       }
       line[len] = '\0';
+      const size_t lineLen = len;
       len = 0;
-      if (++lineNo <= 3) continue;  // snapshot, nome e total
-      const char* sep = strchr(line, ' ');
-      if (sep != nullptr && static_cast<size_t>(sep - line) == artistId.length() &&
-          strncmp(line, artistId.c_str(), sep - line) == 0) {
-        return strtoul(sep + 1, nullptr, 10);
+      if (++lineNo <= HEADER_LINES || lineLen < 3 || line[1] != ' ') continue;
+
+      const char* id = line + 2;
+      if (line[0] == 'a' && count == 0) {
+        const char* sep = strchr(id, ' ');
+        if (sep != nullptr && idEquals(id, sep - id, artistId)) {
+          count = strtoul(sep + 1, nullptr, 10);
+        }
+      } else if (line[0] == 't' && idEquals(id, lineLen - 2, trackId)) {
+        hasTrack = true;
+        return;  // as linhas "t" vêm depois das "a": nada mais a procurar
       }
     }
   }
-  return 0;
 }
 
 }  // namespace
@@ -97,12 +113,58 @@ bool Profiles::readHeader(const String& id, Playlist& p) const {
   if (!fileExists(path)) return false;
   File f = LittleFS.open(path, "r");
   if (!f) return false;
+  const bool current = readLine(f) == FORMAT_TAG;
   p.id = id;
   p.snapshot = readLine(f);
   p.name = readLine(f);
   p.total = readLine(f).toInt();
   f.close();
-  return !p.snapshot.isEmpty();
+  return current && !p.snapshot.isEmpty();
+}
+
+bool Profiles::load(const String& id, Playlist& p, Counts& counts,
+                    std::vector<String>& tracks) const {
+  if (!readHeader(id, p)) return false;
+  File f = LittleFS.open(profilePath(id), "r");
+  if (!f) return false;
+  for (int i = 0; i < HEADER_LINES; ++i) readLine(f);
+  while (f.available()) {
+    const String line = readLine(f);
+    if (line.startsWith("a ")) {
+      const int sep = line.indexOf(' ', 2);
+      if (sep > 2) counts[line.substring(2, sep)] = line.substring(sep + 1).toInt();
+    } else if (line.startsWith("t ")) {
+      tracks.push_back(line.substring(2));
+    }
+  }
+  f.close();
+  return true;
+}
+
+bool Profiles::write(const Playlist& p, const Counts& counts,
+                     const std::vector<String>& tracks) const {
+  // Grava num temporário e renomeia: uma queda de energia não deixa perfil pela metade
+  const String path = profilePath(p.id);
+  const String tmp = String(PROFILE_DIR) + "/" + p.id + ".tmp";
+  File f = LittleFS.open(tmp, "w");
+  if (!f) return false;
+  f.println(FORMAT_TAG);
+  f.println(p.snapshot);
+  f.println(p.name);
+  f.println(p.total);
+  for (const auto& [artist, n] : counts) {
+    f.print("a ");
+    f.print(artist);
+    f.print(' ');
+    f.println(n);
+  }
+  for (const String& track : tracks) {
+    f.print("t ");
+    f.println(track);
+  }
+  f.close();
+  if (fileExists(path)) LittleFS.remove(path);
+  return LittleFS.rename(tmp, path);
 }
 
 BackendError Profiles::fetchPlaylists(std::vector<Playlist>& out) {
@@ -150,7 +212,8 @@ BackendError Profiles::build(Playlist& p, uint32_t& done, uint32_t toFetch,
                              const ProgressFn& progress, int& status) {
   Serial.printf("[perfis] lendo '%s' (%u faixas)\n", p.name.c_str(), p.apiTotal);
 
-  std::map<String, uint16_t> counts;
+  Counts counts;
+  std::vector<String> tracks;
   uint32_t total = 0;
   JsonDocument filter;
   JsonDocument doc;
@@ -161,10 +224,11 @@ BackendError Profiles::build(Playlist& p, uint32_t& done, uint32_t toFetch,
     const char* field = useTrackField_ ? "track" : "item";
     filter.clear();
     filter["next"] = true;
+    filter["items"][0][field]["id"] = true;
     filter["items"][0][field]["artists"][0]["id"] = true;
     const String url = "/playlists/" + p.id + "/items?limit=" + String(cfg::PAGE_LIMIT) +
                        "&offset=" + String(offset) + "&fields=next,items(" + field +
-                       "(artists(id)))";
+                       "(id,artists(id)))";
 
     const BackendError err = client_.call("GET", url, "", filter, doc, status);
     if (err == BackendError::Api && status == 400 && !useTrackField_) {
@@ -177,8 +241,12 @@ BackendError Profiles::build(Playlist& p, uint32_t& done, uint32_t toFetch,
     JsonArrayConst items = doc["items"];
     size_t withField = 0;
     for (JsonObjectConst it : items) {
-      if (!it[field].isNull()) ++withField;
-      const char* artist = it[field]["artists"][0]["id"];
+      JsonObjectConst track = it[field];
+      if (track.isNull()) continue;
+      ++withField;
+      const char* trackId = track["id"];
+      if (trackId != nullptr && *trackId != '\0') tracks.push_back(trackId);
+      const char* artist = track["artists"][0]["id"];
       if (artist == nullptr || *artist == '\0') continue;  // faixa local, episódio ou indisponível
       ++counts[artist];
       ++total;
@@ -197,30 +265,11 @@ BackendError Profiles::build(Playlist& p, uint32_t& done, uint32_t toFetch,
     offset += cfg::PAGE_LIMIT;
   }
 
-  // Grava num temporário e renomeia: uma queda de energia não deixa perfil pela metade
-  const String path = profilePath(p.id);
-  const String tmp = String(PROFILE_DIR) + "/" + p.id + ".tmp";
-  File f = LittleFS.open(tmp, "w");
-  if (!f) {
-    Serial.printf("[perfis] falha ao gravar '%s'\n", p.name.c_str());
-    return BackendError::Api;
-  }
-  f.println(p.snapshot);
-  f.println(p.name);
-  f.println(total);
-  for (const auto& [artist, n] : counts) {
-    f.print(artist);
-    f.print(' ');
-    f.println(n);
-  }
-  f.close();
-  if (fileExists(path)) LittleFS.remove(path);
-  if (!LittleFS.rename(tmp, path)) {
+  p.total = total;
+  if (!write(p, counts, tracks)) {
     Serial.printf("[perfis] falha ao salvar '%s'\n", p.name.c_str());
     return BackendError::Api;
   }
-
-  p.total = total;
   Serial.printf("[perfis] '%s': %u faixas, %u artistas\n", p.name.c_str(), total,
                 static_cast<unsigned>(counts.size()));
   return BackendError::None;
@@ -310,7 +359,8 @@ BackendError Profiles::sync(bool force, const ProgressFn& progress) {
       ++rebuilt;
     } else if (status == 403) {
       Serial.printf("[perfis] sem acesso a '%s', ignorada\n", fresh[i].name.c_str());
-    } else if (buildErr == BackendError::RateLimited || buildErr == BackendError::NoWifi) {
+    } else if (buildErr == BackendError::RateLimited || buildErr == BackendError::NoWifi ||
+               buildErr == BackendError::AuthExpired) {
       Serial.println("[perfis] sync interrompido");
       err = buildErr;
       keepOld(fresh[i]);
@@ -331,20 +381,51 @@ BackendError Profiles::sync(bool force, const ProgressFn& progress) {
   return err;
 }
 
-void Profiles::weights(const String& artistId, std::vector<Candidate>& out) const {
+void Profiles::weights(const NowPlaying& track, std::vector<Candidate>& out) const {
   out.clear();
   out.reserve(playlists_.size());
   for (const Playlist& p : playlists_) {
     Candidate c;
     c.playlistId = p.id;
     c.name = p.name;
-    if (p.total > 0) {
-      File f = LittleFS.open(profilePath(p.id), "r");
-      if (f) {
-        c.weight = static_cast<float>(countFor(f, artistId)) / p.total;
-        f.close();
-      }
+    const String path = profilePath(p.id);
+    File f;
+    if (fileExists(path)) f = LittleFS.open(path, "r");
+    if (f) {
+      uint32_t count = 0;
+      scanProfile(f, track.artistId, track.trackId, count, c.hasTrack);
+      f.close();
+      if (p.total > 0) c.weight = static_cast<float>(count) / p.total;
     }
     out.push_back(std::move(c));
   }
+}
+
+void Profiles::recordAdd(const String& playlistId, const NowPlaying& track,
+                         const String& snapshot) {
+  auto entry = std::find_if(playlists_.begin(), playlists_.end(),
+                            [&](const Playlist& p) { return p.id == playlistId; });
+  if (entry == playlists_.end()) return;
+
+  Playlist p;
+  Counts counts;
+  std::vector<String> tracks;
+  if (!load(playlistId, p, counts, tracks)) return;  // sem perfil: o próximo sync reconstrói
+
+  if (!track.artistId.isEmpty()) {
+    ++counts[track.artistId];
+    ++p.total;
+  }
+  tracks.push_back(track.trackId);
+  p.name = entry->name;
+  // Sem snapshot novo, fica o antigo e o próximo sync reconstrói a playlist
+  if (!snapshot.isEmpty()) p.snapshot = snapshot;
+
+  if (!write(p, counts, tracks)) {
+    Serial.printf("[perfis] falha ao atualizar '%s'\n", p.name.c_str());
+    return;
+  }
+  entry->total = p.total;
+  entry->snapshot = p.snapshot;
+  Serial.printf("[perfis] '%s' atualizada: %u faixas\n", p.name.c_str(), p.total);
 }

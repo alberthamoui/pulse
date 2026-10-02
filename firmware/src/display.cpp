@@ -92,18 +92,23 @@ bool Display::select(const NowPlaying& track, const std::vector<Candidate>& item
       u8g2_.setDrawColor(0);
     }
 
+    // Coluna da direita: "já" se a música já está na playlist, senão o peso
     int nameW = rowW - 4;
-    if (!manual) {
-      char pct[6];
+    char tag[6] = "";
+    if (item.hasTrack) {
+      snprintf(tag, sizeof(tag), "já");
+    } else if (!manual) {
       const int p = static_cast<int>(item.weight * 100.0f + 0.5f);
       if (p < 1) {
-        snprintf(pct, sizeof(pct), "<1%%");
+        snprintf(tag, sizeof(tag), "<1%%");
       } else {
-        snprintf(pct, sizeof(pct), "%d%%", p);
+        snprintf(tag, sizeof(tag), "%d%%", p);
       }
-      const int pctW = u8g2_.getStrWidth(pct);
-      u8g2_.drawStr(rowW - 2 - pctW, baseline, pct);
-      nameW -= pctW + 4;
+    }
+    if (tag[0] != '\0') {
+      const int tagW = u8g2_.getUTF8Width(tag);
+      u8g2_.drawUTF8(rowW - 2 - tagW, baseline, tag);
+      nameW -= tagW + 4;
     }
     animating |= drawClipped(2, baseline, nameW, top, top + ROW_H, item.name.c_str(), isSel,
                              elapsedMs);

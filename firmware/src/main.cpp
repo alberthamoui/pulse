@@ -5,8 +5,8 @@
 #include "buttons.h"
 #include "config.h"
 #include "display.h"
-#include "fake_backend.h"
 #include "profiles.h"
+#include "spotify_backend.h"
 #include "spotify_client.h"
 #include "state_machine.h"
 
@@ -21,7 +21,7 @@ Display display;
 Buttons buttons;
 SpotifyClient spotify;
 Profiles profiles(spotify);
-FakeBackend backend(profiles);
+SpotifyBackend backend(spotify, profiles);
 StateMachine machine(display, buttons, backend);
 
 // Mostra uma mensagem por durationMs, redesenhando para os textos longos rolarem.
@@ -73,7 +73,7 @@ void bootOnline() {
   SpotifyUser me;
   const BackendError err = spotify.getMe(me);
   if (err != BackendError::None) {
-    showMessage(errorMessage(err), "", cfg::ERROR_MS);
+    showMessage(errorMessage(err), errorDetail(err), cfg::ERROR_MS);
     return;
   }
 
@@ -83,7 +83,9 @@ void bootOnline() {
   profiles.setUserId(me.id);
   const BackendError syncErr =
       profiles.sync(false, [](uint8_t pct) { display.progress("Sincronizando", pct); });
-  if (syncErr != BackendError::None) showMessage(errorMessage(syncErr), "", cfg::ERROR_MS);
+  if (syncErr != BackendError::None) {
+    showMessage(errorMessage(syncErr), errorDetail(syncErr), cfg::ERROR_MS);
+  }
 }
 
 }  // namespace
@@ -91,7 +93,7 @@ void bootOnline() {
 void setup() {
   Serial.begin(115200);
   Serial.println();
-  Serial.println("[pulse] boot (etapa 3: playlists e perfis reais, musica falsa)");
+  Serial.println("[pulse] boot");
 
   display.begin();
   buttons.begin();
