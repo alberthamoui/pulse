@@ -56,7 +56,7 @@ There's a longer write-up of the internals (in Portuguese) in [docs/ARCHITECTURE
 
 ## ESP32 device
 
-<!-- Photo or GIF of the device: docs/device.jpg -->
+![Pulse on a breadboard: ESP32, two buttons and the OLED showing PULSE](docs/device.jpeg)
 
 The same idea without a computer: an ESP32 with a 1.3" OLED and two buttons. Press one while something plays on Spotify (on any device), scroll through the suggested playlists and confirm.
 
@@ -65,7 +65,7 @@ The same idea without a computer: an ESP32 with a 1.3" OLED and two buttons. Pre
 - JSON responses are parsed as a stream with filters, so large responses never sit in RAM.
 - Ranks playlists by artist frequency and falls back to Last.fm similar artists for unknown artists, like the Python version.
 
-Wiring, setup and the problems solved along the way (heap fragmentation during TLS, a shadowed stream timeout, safe retries) are in [firmware/README.md](firmware/README.md).
+[Wiring](firmware/README.md#hardware), setup and the problems solved along the way (heap fragmentation during TLS, a shadowed stream timeout, safe retries) are in [firmware/README.md](firmware/README.md).
 
 ## Setup
 
