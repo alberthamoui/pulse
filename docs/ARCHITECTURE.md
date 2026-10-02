@@ -21,17 +21,13 @@ pulse/
 │       ├── playlist_analyzer.py   # Análise e perfilagem de playlists
 │       ├── hybrid_matcher.py      # Algoritmo principal de matching
 │       ├── artist_frequency_matcher.py  # Algoritmo alternativo simples
-│       ├── matcher.py             # VibeMatcher (audio features, legado)
 │       ├── matcher_base.py        # Interface abstrata dos matchers
 │       ├── lastfm_client.py       # Cliente Last.fm para fallback
 │       └── __init__.py
-├── hardware/
-│   ├── pi_zero/
-│   │   └── handler.py             # Loop para Raspberry Pi Zero
-│   └── pico/                      # Protótipo MicroPython (Pi Pico, simulado no Wokwi)
-│       ├── main.py
-│       ├── constants.py
-│       └── diagram.json
+├── firmware/                      # Versão autônoma em ESP32 (C++/PlatformIO), ver firmware/README.md
+├── tools/
+│   └── get_refresh_token.py       # Gera o refresh token usado pelo firmware
+├── tests/                         # Testes do scoring (pytest, sem rede)
 └── docs/
     └── ARCHITECTURE.md
 ```
@@ -206,7 +202,6 @@ Se Last.fm também não resolver: vai para FALLBACK_PULSE.
 Track            — id, nome, artista, id_artista, artistas, artistas_nomes
 PlaylistProfile  — id, nome, artista_weights, genre_weights, total_tracks, track_ids
 MatchResult      — playlist_id, playlist_name, score, match_type, reason
-AudioFeatures    — energy, danceability, valence, tempo, ...
 ```
 
 ### `client.py` — SpotifyManager
@@ -253,14 +248,11 @@ LASTFM_API_KEY        = "..."   # https://www.last.fm/api/account/create
   "algorithm": "hybrid",
   "fallback_playlist_id": "id_da_playlist_fallback",
   "cache_file": ".pulse_cache.json",
-  "auto_add_min_score": 0.5,
-  "mode": "code"
+  "auto_add_min_score": 0.5
 }
 ```
 
 `auto_add_min_score` é o score mínimo para o `--auto` adicionar sem perguntar (padrão 0.5).
-
-`mode: "hardware"` ativa o loop para Raspberry Pi Zero via `hardware/pi_zero/handler.py`.
 
 ---
 
