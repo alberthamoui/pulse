@@ -2,7 +2,7 @@
 
 A standalone version of Pulse: an ESP32 with two buttons and a small OLED screen. Press a button while a song is playing on Spotify (on any device), pick a playlist from the suggestions and the song is added. No computer involved.
 
-<!-- Photo of the device: firmware/docs/device.jpg -->
+![Pulse on a breadboard](../docs/device.jpeg)
 
 ## Hardware
 
@@ -17,8 +17,10 @@ A standalone version of Pulse: an ESP32 with two buttons and a small OLED screen
 | OLED SDA | GPIO 21 |
 | OLED SCL | GPIO 22 |
 | OLED VCC / GND | 3V3 / GND |
-| Navigate button | GPIO 18 → GND |
-| Confirm button | GPIO 19 → GND |
+| Navigate button (green) | GPIO 18 → GND |
+| Confirm button (white) | GPIO 19 → GND |
+
+![Wiring diagram](../docs/wiring.png)
 
 The buttons use the internal pull-ups (`INPUT_PULLUP`), so each one just goes between the pin and GND. Pins and timings are in [`include/config.h`](include/config.h).
 
