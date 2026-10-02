@@ -93,17 +93,19 @@ bool Display::select(const NowPlaying& track, const std::vector<Candidate>& item
     }
 
     // Coluna da direita: "já" se a música já está na playlist, senão o peso
-    // (só nas sugestões; Fallback e Cancelar não têm peso)
+    // (só nas sugestões; Fallback e Cancelar não têm peso). "~" marca o peso que
+    // veio dos artistas parecidos do Last.fm, que pode passar de 100%.
     int nameW = rowW - 4;
-    char tag[6] = "";
+    char tag[8] = "";
     if (item.hasTrack) {
       snprintf(tag, sizeof(tag), "já");
     } else if (!manual && item.kind == Candidate::Kind::Playlist) {
-      const int p = static_cast<int>(item.weight * 100.0f + 0.5f);
+      const char* prefix = item.similar ? "~" : "";
+      const int p = min(999, static_cast<int>(item.weight * 100.0f + 0.5f));
       if (p < 1) {
-        snprintf(tag, sizeof(tag), "<1%%");
+        snprintf(tag, sizeof(tag), "%s<1%%", prefix);
       } else {
-        snprintf(tag, sizeof(tag), "%d%%", p);
+        snprintf(tag, sizeof(tag), "%s%d%%", prefix, p);
       }
     }
     if (tag[0] != '\0') {

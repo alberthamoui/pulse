@@ -7,6 +7,9 @@
 #include "backend.h"
 #include "config.h"
 
+// Codifica para query string e corpo x-www-form-urlencoded (RFC 3986).
+String urlEncode(const String& s);
+
 struct SpotifyUser {
   String id;
   String displayName;

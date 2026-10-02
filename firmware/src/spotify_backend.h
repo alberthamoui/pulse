@@ -12,7 +12,8 @@ class SpotifyBackend : public Backend {
       : client_(client), profiles_(profiles) {}
 
   BackendError fetchNowPlaying(NowPlaying& out, const ProgressFn& progress) override;
-  bool rank(const NowPlaying& track, std::vector<Candidate>& out) override;
+  bool rank(const NowPlaying& track, std::vector<Candidate>& out,
+            const ProgressFn& progress) override;
   BackendError addTrack(const NowPlaying& track, const Candidate& playlist,
                         const ProgressFn& progress) override;
   BackendError resyncAll(const ProgressFn& progress) override;
