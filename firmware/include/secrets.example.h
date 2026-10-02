@@ -15,4 +15,8 @@ constexpr char SPOTIFY_CLIENT_SECRET[] = "seu-client-secret";
 // Gerado por: python tools/get_refresh_token.py
 constexpr char SPOTIFY_REFRESH_TOKEN[] = "seu-refresh-token";
 
+// Playlist para músicas sem destino certo (o mesmo fallback_playlist_id do
+// config/config.json). Vazio esconde a opção "Fallback".
+constexpr char FALLBACK_PLAYLIST_ID[] = "";
+
 }  // namespace secrets

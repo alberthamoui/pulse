@@ -2,7 +2,10 @@
 
 #include <ArduinoJson.h>
 
+#include <algorithm>
+
 #include "profiles.h"
+#include "secrets.h"
 #include "spotify_client.h"
 
 BackendError SpotifyBackend::fetchNowPlaying(NowPlaying& out, const ProgressFn& progress) {
@@ -46,7 +49,33 @@ BackendError SpotifyBackend::fetchNowPlaying(NowPlaying& out, const ProgressFn& 
 
 bool SpotifyBackend::rank(const NowPlaying& track, std::vector<Candidate>& out) {
   profiles_.weights(track, out);
-  return selectCandidates(out);
+
+  // A fallback vira uma opção fixa, então sai da lista comum
+  Candidate fallback;
+  fallback.playlistId = secrets::FALLBACK_PLAYLIST_ID;
+  fallback.name = "Fallback";
+  fallback.kind = Candidate::Kind::Fallback;
+  auto found = std::find_if(out.begin(), out.end(), [&](const Candidate& c) {
+    return c.playlistId == fallback.playlistId;
+  });
+  if (found != out.end()) {
+    fallback.hasTrack = found->hasTrack;
+    out.erase(found);
+  }
+
+  Candidate cancel;
+  cancel.name = "Cancelar";
+  cancel.kind = Candidate::Kind::Cancel;
+
+  std::vector<Candidate> extras;
+  if (!fallback.playlistId.isEmpty()) extras.push_back(fallback);
+  extras.push_back(cancel);
+
+  // Com ranking, a melhor sugestão continua sendo a primeira. Sem match, a
+  // fallback é o destino mais provável, e Cancelar não fica no fim de uma lista longa.
+  const bool matched = selectCandidates(out);
+  out.insert(matched ? out.end() : out.begin(), extras.begin(), extras.end());
+  return matched;
 }
 
 BackendError SpotifyBackend::addTrack(const NowPlaying& track, const Candidate& playlist,

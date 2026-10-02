@@ -13,12 +13,16 @@ struct NowPlaying {
   String artistName;
 };
 
-// Playlist candidata a receber a música. weight = n / total do artista na playlist.
+// Opção da tela de escolha: uma playlist candidata (weight = n / total do
+// artista na playlist), a playlist de fallback ou cancelar.
 struct Candidate {
+  enum class Kind : uint8_t { Playlist, Fallback, Cancel };
+
   String playlistId;
   String name;
   float weight = 0.0f;
   bool hasTrack = false;  // a música já está nessa playlist
+  Kind kind = Kind::Playlist;
 };
 
 enum class BackendError : uint8_t {
@@ -45,6 +49,7 @@ class Backend {
   // Preenche out com as playlists ordenadas pelo peso do artista da música (no
   // máximo cfg::MAX_SUGGESTIONS com peso > 0). Se o artista não estiver em
   // nenhuma, devolve todas as playlists para escolha manual e retorna false.
+  // Inclui também as opções de fallback e de cancelar.
   virtual bool rank(const NowPlaying& track, std::vector<Candidate>& out) = 0;
 
   virtual BackendError addTrack(const NowPlaying& track, const Candidate& playlist,

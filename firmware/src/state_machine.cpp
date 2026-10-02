@@ -121,6 +121,11 @@ void StateMachine::moveSelection() {
 
 void StateMachine::confirmSelection() {
   const Candidate chosen = candidates_[selected_];
+  if (chosen.kind == Candidate::Kind::Cancel) {
+    Serial.println("[sm] cancelado, nada adicionado");
+    enterIdle();
+    return;
+  }
   if (chosen.hasTrack) {
     Serial.printf("[sm] ja esta em %s, nada adicionado\n", chosen.name.c_str());
     line1_ = "Já está em";

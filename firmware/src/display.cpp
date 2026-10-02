@@ -93,11 +93,12 @@ bool Display::select(const NowPlaying& track, const std::vector<Candidate>& item
     }
 
     // Coluna da direita: "já" se a música já está na playlist, senão o peso
+    // (só nas sugestões; Fallback e Cancelar não têm peso)
     int nameW = rowW - 4;
     char tag[6] = "";
     if (item.hasTrack) {
       snprintf(tag, sizeof(tag), "já");
-    } else if (!manual) {
+    } else if (!manual && item.kind == Candidate::Kind::Playlist) {
       const int p = static_cast<int>(item.weight * 100.0f + 0.5f);
       if (p < 1) {
         snprintf(tag, sizeof(tag), "<1%%");
