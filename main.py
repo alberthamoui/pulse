@@ -17,14 +17,19 @@ ROOT = Path(__file__).parent
 sys.path.insert(0, str(ROOT / 'src'))
 sys.path.insert(0, str(ROOT))
 import json
+import os
+import tempfile
 import time
 from datetime import datetime, timezone
 import spotipy
 from core import SpotifyManager, SpotifyPlaylistAnalyzer, ArtistFrequencyMatcher, HybridMatcher
 from core.models import PlaylistProfile
+from core.playlist_analyzer import smoothed_weights
 from config.settings import SPOTIFY_CLIENT_ID, SPOTIFY_CLIENT_SECRET, SPOTIFY_REDIRECT_URI, LASTFM_API_KEY
 
 DEFAULT_AUTO_ADD_MIN_SCORE = 0.5  # usado se 'auto_add_min_score' nao estiver no config.json
+DEFAULT_ALGORITHM = 'hybrid'
+CACHE_VERSION = 2  # 2: perfis guardam as contagens brutas (artist_counts)
 
 
 def load_config() -> dict:
@@ -48,6 +53,9 @@ def load_cache(cache_path: Path, algorithm: str) -> dict | None:
         if data.get('algorithm') != algorithm:
             print("Cache invalido: algoritmo diferente do configurado.")
             return None
+        if data.get('version') != CACHE_VERSION:
+            print("Cache em formato antigo: reconstruindo os perfis.")
+            return None
         return data
     except Exception as e:
         print(f"Erro ao ler cache: {e}")
@@ -58,14 +66,22 @@ def save_cache(cache_path: Path, algorithm: str, profiles_data: dict, snapshots:
     """Salva os perfis, snapshot_ids e nomes de artistas no cache."""
     try:
         data = {
+            'version': CACHE_VERSION,
             'algorithm': algorithm,
             'cached_at': datetime.now(timezone.utc).isoformat(),
             'snapshots': snapshots,
             'artist_names': artist_names or {},
             'profiles': profiles_data,
         }
-        with open(cache_path, 'w', encoding='utf-8') as f:
-            json.dump(data, f, ensure_ascii=False, indent=2)
+        # Grava num temporário e troca: uma interrupção no meio não corrompe o cache
+        fd, tmp = tempfile.mkstemp(dir=cache_path.parent, prefix=cache_path.name, suffix='.tmp')
+        try:
+            with os.fdopen(fd, 'w', encoding='utf-8') as f:
+                json.dump(data, f, ensure_ascii=False, indent=2)
+            os.replace(tmp, cache_path)
+        except BaseException:
+            os.unlink(tmp)
+            raise
         print(f"Cache salvo em {cache_path}")
     except Exception as e:
         print(f"Aviso: nao foi possivel salvar cache: {e}")
@@ -75,17 +91,13 @@ def atualiza_cache(profiles_data: dict, snapshots: dict, playlist_id: str, new_s
     """Atualiza o cache localmente apos adicionar uma musica, sem chamadas extras a API."""
     profile = profiles_data[playlist_id]
     profile.setdefault('track_ids', []).append(track.id)
+    profile['total_tracks'] = profile.get('total_tracks', 0) + 1
     snapshots[playlist_id] = new_snapshot
 
-    total = profile.get('total_tracks', 0)
-    if total > 0 and track.id_artista:
-        new_total = total + 1
-        old_weight = profile['artista_weights'].get(track.id_artista, 0.0)
-        old_count  = round(old_weight * total)
-        new_weights = {a: w * total / new_total for a, w in profile['artista_weights'].items()}
-        new_weights[track.id_artista] = (old_count + 1) / new_total
-        profile['artista_weights'] = new_weights
-        profile['total_tracks']    = new_total
+    if track.id_artista:
+        counts = profile.setdefault('artist_counts', {})
+        counts[track.id_artista] = counts.get(track.id_artista, 0) + 1
+        profile['artista_weights'] = smoothed_weights(counts)
 
 
 def build_profiles_for(spotify: SpotifyManager, playlists: list, matcher_type: str) -> tuple[dict, dict]:
@@ -108,6 +120,7 @@ def build_profiles_for(spotify: SpotifyManager, playlists: list, matcher_type: s
                 'genre_weights': p.genre_weights,
                 'total_tracks': p.total_tracks,
                 'track_ids': p.track_ids,
+                'artist_counts': p.artist_counts,
             }
             for pl_id, p in profiles.items()
         }
@@ -212,17 +225,19 @@ def prompt_playlist_choice(
     else:
         print("Nenhuma playlist compatível encontrada. Escolha manualmente:")
     for i, r in enumerate(options, 1):
-        marker = "(recomendado)" if i == 1 else ""
-        print(f"  [{i}] {r.playlist_name}: {r.score:.2%} ({r.reason}) {marker}")
+        reason = f" ({r.reason})" if r.reason else ""
+        marker = " (recomendado)" if i == 1 else ""
+        print(f"  [{i}] {r.playlist_name}: {r.score:.2%}{reason}{marker}")
     print(f"  [l] {liked_label}")
     print(f"  [f] {fallback_label}")
-    print(f"  [n] Não adicionar")
+    print("  [n] Não adicionar")
     print()
 
     valid_range = '/'.join(str(i) for i in range(1, len(options) + 1)) + '/l/f/n'
+    default = '1' if options else 'f'  # sem sugestão, Enter vai para a fallback
     while True:
-        raw    = input(f"Escolha [{valid_range}] (Enter = 1): ").strip()
-        choice = raw if raw else '1'
+        raw    = input(f"Escolha [{valid_range.lstrip('/')}] (Enter = {default}): ").strip()
+        choice = raw if raw else default
 
         if choice == 'l':
             return "liked", "Músicas Curtidas"
@@ -246,7 +261,7 @@ def run_cache_refresh() -> dict:
     except RuntimeError as e:
         return {'success': False, 'error': str(e)}
 
-    matcher_type = config.get('algorithm', 'artist_frequency')
+    matcher_type = config.get('algorithm', DEFAULT_ALGORITHM)
     cache_file   = config.get('cache_file', '.pulse_cache.json')
     cache_path   = ROOT / cache_file
 
@@ -288,7 +303,7 @@ def run_pulse(mode: str = 'normal') -> dict:
     except RuntimeError as e:
         return {'success': False, 'error': str(e)}
 
-    matcher_type = config.get('algorithm', 'artist_frequency')
+    matcher_type = config.get('algorithm', DEFAULT_ALGORITHM)
     fallback_id  = config.get('fallback_playlist_id')
     cache_file   = config.get('cache_file', '.pulse_cache.json')
     cache_path   = ROOT / cache_file
@@ -307,8 +322,6 @@ def run_pulse(mode: str = 'normal') -> dict:
         track = spotify.get_current_track()
     except (spotipy.exceptions.SpotifyException, ConnectionError, TimeoutError) as e:
         return {'success': False, 'error': f'Erro Spotify/conexão: {e}'}
-    except TimeoutError:
-        return {'success': False, 'error': 'Timeout ao conectar ao Spotify'}
 
     if not track:
         print("Nenhuma musica tocando no momento.")
@@ -317,6 +330,9 @@ def run_pulse(mode: str = 'normal') -> dict:
         return {'success': False, 'error': 'Nenhuma música tocando'}
 
     print(f"Tocando: {track.nome} - {track.artista}")
+
+    if not track.id:
+        return {'success': False, 'error': 'Arquivo local: fora do catálogo do Spotify, não dá para adicionar'}
 
     print("Verificando playlists...")
     all_playlists = spotify.get_user_playlists()
@@ -337,17 +353,18 @@ def run_pulse(mode: str = 'normal') -> dict:
     if profiles_data:
         matcher = train_matcher(matcher_type, profiles_data, spotify, artist_names=artist_names)
 
-        if matcher_type == 'hybrid' and hasattr(matcher, 'top_matches'):
+        if matcher_type == 'hybrid':
             candidates = matcher.top_matches(track, n=3)
             if not candidates and LASTFM_API_KEY:
                 print("Nenhum match direto. Tentando Last.fm...")
                 candidates = matcher.lastfm_fallback(track, LASTFM_API_KEY)
                 if candidates:
                     print("Match via Last.fm encontrado.")
-
-            result = candidates[0] if candidates else None
         else:
-            result = matcher.match(track)
+            best = matcher.match(track)
+            candidates = [best] if best else []
+
+        result = candidates[0] if candidates else None
 
         if result:
             playlist_id   = result.playlist_id
@@ -403,8 +420,8 @@ def run_pulse(mode: str = 'normal') -> dict:
             'elapsed':  elapsed,
         }
 
-    # Confirmação interativa
-    if matcher_type == 'hybrid' and mode != 'auto':
+    # Confirmação interativa: só o --auto adiciona sem perguntar
+    if mode != 'auto':
         choice = prompt_playlist_choice(candidates, fallback_id, profiles_data, spotify, track)
         if choice is None:
             elapsed = round(time.time() - t_start, 1)

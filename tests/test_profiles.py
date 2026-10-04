@@ -28,13 +28,16 @@ def test_tf_uses_laplace_smoothing():
     pages = [{"total": 4, "next": None, "items": [
         item("t1", "a", "A"), item("t2", "a", "A"), item("t3", "a", "A"), item("t4", "b", "B"),
     ]}]
-    weights, total, track_ids, names = SpotifyPlaylistAnalyzer(FakeManager(pages)).build_artist_profile("p")
+    weights, total, track_ids, names, counts = SpotifyPlaylistAnalyzer(
+        FakeManager(pages)
+    ).build_artist_profile("p")
 
     assert weights["a"] == pytest.approx((3 + 1) / (4 + 2))
     assert weights["b"] == pytest.approx((1 + 1) / (4 + 2))
     assert total == 4
     assert track_ids == ["t1", "t2", "t3", "t4"]
     assert names == {"a": "A", "b": "B"}
+    assert counts == {"a": 3, "b": 1}
 
 
 def test_smoothing_keeps_small_playlists_from_dominating():
