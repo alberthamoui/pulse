@@ -31,6 +31,7 @@ class SpotifyManager:
             "playlist-modify-private "
             "playlist-modify-public "
             "playlist-read-private "
+            "playlist-read-collaborative "
             "user-library-read "
             "user-library-modify"
         )
@@ -93,7 +94,7 @@ class SpotifyManager:
                 )
 
             return None  # música não tocando
-        except (spotipy.exceptions.SpotifyException, ConnectionError, TimeoutError) as e:
+        except (spotipy.exceptions.SpotifyException, ConnectionError, TimeoutError):
             raise  # relança erros graves para main.py tratar
         except Exception as e:
             print(f"Erro inesperado ao obter música atual: {e}")
@@ -101,7 +102,8 @@ class SpotifyManager:
 
     def get_user_playlists(self) -> List[Dict]:
         """
-        Obtém todas as playlists do usuário com paginação.
+        Obtém com paginação as playlists do usuário e as colaborativas que ele segue
+        (as mesmas que o firmware considera).
 
         Returns:
             Lista de dicts com 'id', 'name' e 'snapshot_id'
@@ -112,7 +114,8 @@ class SpotifyManager:
             result = self.sp.current_user_playlists(limit=50)
             while result:
                 for p in result.get('items', []):
-                    if p.get('owner', {}).get('id') == user_id:
+                    mine = p.get('owner', {}).get('id') == user_id
+                    if mine or p.get('collaborative'):
                         playlists.append({
                             'id': p['id'],
                             'name': p['name'],
@@ -174,12 +177,12 @@ class SpotifyManager:
                     if artist:
                         result[artist['id']] = artist.get('genres', [])
             except Exception as e:
-                # Erro inesperado - logar e relançar
-                logging.error(f"Erro inesperado ao buscar gêneros: {e}")
-                raise
+                # Gênero é um sinal secundário: uma falha (ex.: 429) não derruba o matching
+                print(f"Aviso: falha ao buscar gêneros, seguindo sem eles ({e})")
+                break
             finally:
                 spotipy_logger.setLevel(prev_level)
-        return result
+        return {aid: result.get(aid, []) for aid in artist_ids}
 
 
 
