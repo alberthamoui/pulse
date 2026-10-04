@@ -42,9 +42,9 @@ python main.py [--auto | --dry-run | --refresh | --cache-refresh]
         ├─ 1. Conecta ao Spotify (OAuth via spotipy)
         │
         ├─ 2. Obtém música tocando agora
-        │       → se nada tocando: encerra
+        │       → se nada tocando ou arquivo local: encerra
         │
-        ├─ 3. Busca todas as playlists do usuário
+        ├─ 3. Busca as playlists do usuário e as colaborativas
         │
         ├─ 4. Sincroniza cache (veja seção Cache)
         │       → --refresh: reconstrói tudo
@@ -65,7 +65,7 @@ python main.py [--auto | --dry-run | --refresh | --cache-refresh]
         │       → se score=0 em tudo e Last.fm configurado: tenta fallback Last.fm
         │       → apresenta top 3 candidatas ao usuário
         │
-        ├─ 8. Usuário confirma ou escolhe outra playlist
+        ├─ 8. Usuário confirma ou escolhe outra playlist (qualquer algoritmo)
         │       → --auto: adiciona sem perguntar se score ≥ auto_add_min_score
         │       → --dry-run: mostra os candidatos e encerra sem adicionar
         │
@@ -92,6 +92,7 @@ O contador `spotify.api_calls` é exibido ao final de cada execução. Toda cham
 
 ```json
 {
+  "version": 2,
   "algorithm": "hybrid",
   "cached_at": "2026-05-23T...",
   "snapshots": {
@@ -107,18 +108,21 @@ O contador `spotify.api_calls` é exibido ao final de cada execução. Toda cham
       "artista_weights": { "artist_id": 0.142 },
       "genre_weights": {},
       "total_tracks": 28,
-      "track_ids": ["track_id_1", "track_id_2"]
+      "track_ids": ["track_id_1", "track_id_2"],
+      "artist_counts": { "artist_id": 4 }
     }
   }
 }
 ```
 
-**Invalidação inteligente:** a cada run, o `snapshot_id` de cada playlist é comparado com o do cache. Só playlists que mudaram são re-analisadas. Playlists removidas são descartadas do cache.
+**Invalidação inteligente:** a cada run, o `snapshot_id` de cada playlist é comparado com o do cache. Só playlists que mudaram são re-analisadas. Playlists removidas são descartadas do cache. Um cache de outra `version` (formato antigo) é descartado e reconstruído.
 
 **Atualização pós-adição:** após adicionar uma música, o cache é atualizado localmente:
-- `track_ids` da playlist recebe o novo track id
-- `artista_weights` e `total_tracks` são recalculados sem chamada à API
+- `track_ids` da playlist recebe o novo track id e `total_tracks` soma 1
+- `artist_counts` soma 1 para o artista, e `artista_weights` é recalculado a partir das contagens brutas (com o mesmo Laplace smoothing do build), sem chamada à API
 - `snapshot_id` é atualizado com o valor retornado pelo endpoint de adição
+
+O arquivo é gravado num temporário e trocado com `os.replace`, para uma interrupção no meio não corromper o cache.
 
 ---
 
@@ -200,20 +204,21 @@ Se Last.fm também não resolver: vai para FALLBACK_PULSE.
 ### `models.py`
 ```python
 Track            — id, nome, artista, id_artista, artistas, artistas_nomes
-PlaylistProfile  — id, nome, artista_weights, genre_weights, total_tracks, track_ids
+PlaylistProfile  — id, nome, artista_weights, genre_weights, total_tracks, track_ids, artist_counts
 MatchResult      — playlist_id, playlist_name, score, match_type, reason
 ```
 
 ### `client.py` — SpotifyManager
 - `get_current_track()` → Track atual
-- `get_user_playlists()` → lista paginada (filtra só playlists do próprio usuário)
+- `get_user_playlists()` → lista paginada (playlists do próprio usuário e colaborativas, como no firmware)
 - `get_artists_genres()` → batch de 50, retorna `{}` silenciosamente se endpoint indisponível
 - `add_track_to_playlist()` → retorna novo `snapshot_id` (vem da resposta do endpoint)
 - Contador `api_calls` via monkey-patch em `_internal_call`
 
 ### `playlist_analyzer.py` — SpotifyPlaylistAnalyzer
 - `fetch_tracks()` → `(List[Track], total)` — paginação de 100 por request
-- `build_artist_profile()` → `(artista_weights, total_tracks, track_ids, artist_names)`
+- `build_artist_profile()` → `(artista_weights, total_tracks, track_ids, artist_names, artist_counts)`
+- `smoothed_weights(counts)` → pesos com Laplace smoothing; usado no build e na atualização pós-adição
 - `build_all_profiles()` → paralelo com `ThreadPoolExecutor(max_workers=5)`, retorna `(profiles, artist_names)`
 
 ### `hybrid_matcher.py` — HybridMatcher
@@ -273,6 +278,5 @@ No modo normal, exibe as top 3 playlists candidatas com score e motivo e pede co
 ## Limitações Conhecidas
 
 - **Gêneros indisponíveis:** endpoint `GET /v1/artists` retorna 403 para apps não aprovados pelo Spotify. `genre_weights` fica sempre vazio.
-- **Artistas novos sem Last.fm:** se o artista não está em nenhuma playlist E Last.fm não tem dados ou não há artistas similares nas playlists, vai para FALLBACK_PULSE.
-- **`total_tracks` necessário para recálculo local:** cache antigo (anterior a maio/2026) tem `total_tracks=0`, o que desativa o recálculo de pesos após adição. Resolver com `--refresh`.
+- **Artistas novos sem Last.fm:** se o artista não está em nenhuma playlist E Last.fm não tem dados ou não há artistas similares nas playlists, o menu não tem sugestões e o Enter escolhe a FALLBACK_PULSE (no `--auto`, nada é adicionado).
 - **Co-ocorrência depende do histórico próprio:** Jaccard só funciona para artistas que já aparecem em pelo menos uma playlist do usuário.
