@@ -70,14 +70,16 @@ class SpotifyManager:
 
     def get_current_track(self) -> Optional[Track]:
         """
-        Gets the song playing right now.
+        Gets the current song, playing or paused (like the firmware: pausing to
+        decide where it goes is the natural way to use Pulse).
         
         Returns:
-            Track, or None if nothing is playing
+            Track, or None if there's no song (no session, podcast or ad)
         """
         try:
             result = self.sp.current_user_playing_track()
-            if result and result.get('is_playing') and result.get('item'):
+            is_song = result and result.get('currently_playing_type', 'track') == 'track'
+            if is_song and result.get('item'):
                 item = result['item']
                 artists = item.get('artists', [])
                 artist_ids = [a.get('id') for a in artists if a.get('id')]
@@ -93,7 +95,7 @@ class SpotifyManager:
                     artist_names=artist_names,  # ["Name1", "Name2"]
                 )
 
-            return None  # nothing playing
+            return None  # no song
         except (spotipy.exceptions.SpotifyException, ConnectionError, TimeoutError):
             raise  # re-raises serious errors for main.py to handle
         except Exception as e:

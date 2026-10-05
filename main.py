@@ -396,7 +396,7 @@ def run_pulse(mode: str = 'normal') -> dict:
         print(f"[{elapsed}s | {spotify.api_calls} API calls]")
         return {'success': False, 'error': 'Nothing playing'}
 
-    print(f"Playing: {track.name} - {track.artist}")
+    print(f"Current song: {track.name} - {track.artist}")
 
     if not track.id:
         return {'success': False, 'error': "Local file: not in the Spotify catalog, it can't be added"}
