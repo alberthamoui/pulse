@@ -58,8 +58,6 @@ class Profiles {
   // next sync doesn't rebuild the playlist.
   void recordAdd(const String& playlistId, const NowPlaying& track, const String& snapshot);
 
-  size_t size() const { return playlists_.size(); }
-
  private:
   struct Playlist {
     String id;

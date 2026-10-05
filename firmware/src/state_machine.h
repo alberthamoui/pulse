@@ -4,15 +4,15 @@
 
 #include <vector>
 
-#include "backend.h"
 #include "buttons.h"
 #include "display.h"
+#include "spotify_backend.h"
 
 enum class State : uint8_t { Idle, Loading, Select, Done, Error };
 
 class StateMachine {
  public:
-  StateMachine(Display& display, Buttons& buttons, Backend& backend)
+  StateMachine(Display& display, Buttons& buttons, SpotifyBackend& backend)
       : display_(display), buttons_(buttons), backend_(backend) {}
 
   void begin();
@@ -32,7 +32,7 @@ class StateMachine {
 
   Display& display_;
   Buttons& buttons_;
-  Backend& backend_;
+  SpotifyBackend& backend_;
 
   State state_ = State::Idle;
   uint32_t stateSince_ = 0;
