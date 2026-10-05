@@ -18,6 +18,7 @@ sys.path.insert(0, str(ROOT / 'src'))
 sys.path.insert(0, str(ROOT))
 import json
 import os
+import re
 import tempfile
 import time
 from datetime import datetime, timezone
@@ -25,11 +26,44 @@ import spotipy
 from core import SpotifyManager, SpotifyPlaylistAnalyzer, ArtistFrequencyMatcher, HybridMatcher
 from core.models import PlaylistProfile
 from core.playlist_analyzer import smoothed_weights
-from config.settings import SPOTIFY_CLIENT_ID, SPOTIFY_CLIENT_SECRET, SPOTIFY_REDIRECT_URI, LASTFM_API_KEY
+
+try:
+    import config.settings as settings
+except ModuleNotFoundError as e:
+    if e.name != 'config.settings':
+        raise
+    sys.exit("config/settings.py not found. Copy config/settings.example.py to config/settings.py "
+             "and fill in your Spotify app credentials (see Setup in the README).")
+
+# getattr: an older settings.py without one of the optional keys still works
+SPOTIFY_CLIENT_ID     = getattr(settings, 'SPOTIFY_CLIENT_ID', '')
+SPOTIFY_CLIENT_SECRET = getattr(settings, 'SPOTIFY_CLIENT_SECRET', '')
+SPOTIFY_REDIRECT_URI  = getattr(settings, 'SPOTIFY_REDIRECT_URI', 'http://127.0.0.1:8080')
+LASTFM_API_KEY        = getattr(settings, 'LASTFM_API_KEY', '')
 
 DEFAULT_AUTO_ADD_MIN_SCORE = 0.5  # used if 'auto_add_min_score' isn't in config.json
 DEFAULT_ALGORITHM = 'hybrid'
 CACHE_VERSION = 3  # 3: profile keys renamed to English (name, artist_weights)
+PLACEHOLDER_CREDENTIALS = {'', 'your_client_id', 'your_client_secret'}  # as in settings.example.py
+
+
+def check_credentials() -> str | None:
+    """Returns an error message if the Spotify credentials in settings.py aren't filled in."""
+    if {str(SPOTIFY_CLIENT_ID).strip(), str(SPOTIFY_CLIENT_SECRET).strip()} & PLACEHOLDER_CREDENTIALS:
+        return ("SPOTIFY_CLIENT_ID and SPOTIFY_CLIENT_SECRET in config/settings.py aren't filled in. "
+                "Copy them from your app at https://developer.spotify.com/dashboard")
+    return None
+
+
+def parse_playlist_id(value) -> str | None:
+    """
+    Accepts a playlist ID, its link (https://open.spotify.com/playlist/<id>?si=...)
+    or its URI (spotify:playlist:<id>). Returns the ID, or None if it isn't one.
+    """
+    value = str(value or '').strip()
+    match = (re.fullmatch(r'([A-Za-z0-9]{22})', value)
+             or re.search(r'playlist[/:]([A-Za-z0-9]{22})(?![A-Za-z0-9])', value))
+    return match.group(1) if match else None
 
 
 def load_config() -> dict:
@@ -133,7 +167,10 @@ def sync_profiles(spotify: SpotifyManager, all_playlists: list, cached_data: dic
                     matcher_type: str) -> tuple[dict, dict, dict]:
     """
     Updates only the playlists whose snapshot_id changed since the last cache.
-    Returns (profiles_data, current_snapshots, artist_names).
+    Returns (profiles_data, snapshots, artist_names).
+
+    Only the playlists that were actually read get their new snapshot_id. One that
+    failed keeps its old snapshot (or none), so the next run reads it again.
     """
     playlists = [p for p in all_playlists if p['id']]
     current_snapshots = {p['id']: p['snapshot_id'] for p in playlists}
@@ -141,13 +178,18 @@ def sync_profiles(spotify: SpotifyManager, all_playlists: list, cached_data: dic
     if cached_data is None:
         print(f"No cache. Analyzing {len(playlists)} playlists...")
         profiles, artist_names = build_profiles_for(spotify, playlists, matcher_type)
-        return profiles, current_snapshots, artist_names
+        warn_unread(len(playlists) - len(profiles))
+        snapshots = {pid: current_snapshots[pid] for pid in profiles}
+        return profiles, snapshots, artist_names
 
     cached_snapshots = cached_data.get('snapshots', {})
     cached_profiles  = cached_data.get('profiles', {})
     cached_names     = cached_data.get('artist_names', {})
 
-    changed = [p for p in playlists if current_snapshots[p['id']] != cached_snapshots.get(p['id'])]
+    # A playlist with a snapshot but no profile failed to load before: read it again too
+    changed = [p for p in playlists
+               if current_snapshots[p['id']] != cached_snapshots.get(p['id'])
+               or p['id'] not in cached_profiles]
     removed = [pid for pid in cached_profiles if pid not in current_snapshots]
 
     if not changed and not removed:
@@ -164,7 +206,17 @@ def sync_profiles(spotify: SpotifyManager, all_playlists: list, cached_data: dic
     merged = {pid: prof for pid, prof in cached_profiles.items() if pid not in removed}
     merged.update(new_profiles)
     merged_names = {**cached_names, **new_names}
-    return merged, current_snapshots, merged_names
+
+    failed = {p['id'] for p in changed} - new_profiles.keys()
+    warn_unread(len(failed))
+    snapshots = {pid: snap for pid, snap in current_snapshots.items() if pid not in failed}
+    snapshots.update({pid: cached_snapshots[pid] for pid in failed if pid in cached_snapshots})
+    return merged, snapshots, merged_names
+
+
+def warn_unread(count: int) -> None:
+    if count:
+        print(f"{count} playlist(s) couldn't be read; they'll be retried next run.")
 
 
 def train_matcher(matcher_type: str, profiles_data: dict, spotify=None, artist_names: dict = None):
@@ -265,6 +317,10 @@ def run_cache_refresh() -> dict:
     cache_file   = config.get('cache_file', '.pulse_cache.json')
     cache_path   = ROOT / cache_file
 
+    credentials_error = check_credentials()
+    if credentials_error:
+        return {'success': False, 'error': credentials_error}
+
     print("Connecting to Spotify...")
     spotify = SpotifyManager(
         client_id=SPOTIFY_CLIENT_ID,
@@ -304,12 +360,18 @@ def run_pulse(mode: str = 'normal') -> dict:
         return {'success': False, 'error': str(e)}
 
     matcher_type = config.get('algorithm', DEFAULT_ALGORITHM)
-    fallback_id  = config.get('fallback_playlist_id')
+    fallback_id  = parse_playlist_id(config.get('fallback_playlist_id'))
     cache_file   = config.get('cache_file', '.pulse_cache.json')
     cache_path   = ROOT / cache_file
 
     if not fallback_id:
-        return {'success': False, 'error': "'fallback_playlist_id' is not set"}
+        return {'success': False, 'error': "'fallback_playlist_id' in config/config.json doesn't look like "
+                                           "a Spotify playlist. Paste the playlist link there "
+                                           "(Share > Copy link to playlist)."}
+
+    credentials_error = check_credentials()
+    if credentials_error:
+        return {'success': False, 'error': credentials_error}
 
     print("Connecting to Spotify...")
     spotify = SpotifyManager(
@@ -321,6 +383,11 @@ def run_pulse(mode: str = 'normal') -> dict:
     try:
         track = spotify.get_current_track()
     except (spotipy.exceptions.SpotifyException, ConnectionError, TimeoutError) as e:
+        # A Spotify app in development mode only lets in the accounts registered on it
+        if getattr(e, 'http_status', None) == 403:
+            return {'success': False, 'error': "Spotify refused access (403). If this account doesn't own "
+                                               "the Spotify app, add it under User Management in the "
+                                               "developer dashboard (see Troubleshooting in the README)."}
         return {'success': False, 'error': f'Spotify/connection error: {e}'}
 
     if not track:
@@ -329,7 +396,7 @@ def run_pulse(mode: str = 'normal') -> dict:
         print(f"[{elapsed}s | {spotify.api_calls} API calls]")
         return {'success': False, 'error': 'Nothing playing'}
 
-    print(f"Playing: {track.name} - {track.artist}")
+    print(f"Current song: {track.name} - {track.artist}")
 
     if not track.id:
         return {'success': False, 'error': "Local file: not in the Spotify catalog, it can't be added"}

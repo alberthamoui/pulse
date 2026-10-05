@@ -1,6 +1,6 @@
 {
   "algorithm": "hybrid",
-  "fallback_playlist_id": "id_da_playlist_fallback",
+  "fallback_playlist_id": "paste_your_fallback_playlist_link_here",
   "cache_file": ".pulse_cache.json",
   "auto_add_min_score": 0.5
 }

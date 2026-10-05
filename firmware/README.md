@@ -34,7 +34,7 @@ You need [PlatformIO](https://platformio.org/) and the same Spotify app used by 
    python tools/get_refresh_token.py
    ```
    It uses the Authorization Code with PKCE flow, so it only needs the client ID. It opens the browser, asks for the permissions Pulse needs (currently playing, read and modify playlists) and prints the token.
-3. Copy `include/secrets.example.h` to `include/secrets.h` and fill in the Wi-Fi network, the client ID, the refresh token and, optionally, the fallback playlist ID and the Last.fm API key. The client secret is not needed on the device. `secrets.h` is in `.gitignore`.
+3. Copy `include/secrets.example.h` to `include/secrets.h` and fill in the Wi-Fi network, the client ID, the refresh token and, optionally, the fallback playlist ID and the Last.fm API key. The client secret is not needed on the device. Unlike the Python version, the fallback here takes only the ID: the part after `/playlist/` in the playlist link, without the `?si=...`. `secrets.h` is in `.gitignore`.
 4. Build and flash:
    ```bash
    cd firmware
@@ -56,6 +56,8 @@ The suggestion list shows the song and artist at the top and up to 5 playlists w
 If the artist isn't in any playlist, the suggestions come from Last.fm instead (top 3, marked with `~`). If that doesn't find anything either, all playlists are listed in alphabetical order.
 
 Errors show for 3 s: no Wi-Fi, nothing playing, local file (not in the Spotify catalog, can't be added), API busy (rate limited) and `Reauthorize` when the refresh token expired or was revoked (run `get_refresh_token.py` again).
+
+If the boot stops at `API error` right after `Signing in to Spotify`, check the serial log: a 403 means the Spotify account isn't registered on the app. Add it under User Management in the developer dashboard (see Setup in the [main README](../README.md#setup)).
 
 ## How it works
 

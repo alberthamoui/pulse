@@ -86,9 +86,11 @@ cp config/config.example.json config/config.json
 
 Then:
 
-1. Add `http://127.0.0.1:8080` as a Redirect URI in your Spotify app settings.
-2. Put your client ID and secret (and the Last.fm key, if you have one) in `config/settings.py`.
-3. Create an empty playlist for songs that don't match anything and put its ID in `fallback_playlist_id` in `config/config.json`.
+1. In the [developer dashboard](https://developer.spotify.com/dashboard), create an app and tick **Web API**.
+2. In the app settings, add the Redirect URIs `http://127.0.0.1:8080` (Python version) and `http://127.0.0.1:8888/callback` (ESP32 token tool). It has to be `127.0.0.1`: Spotify doesn't accept `localhost`.
+3. If Pulse will be used with a Spotify account other than the one that created the app, add that account under **User Management** (name and the account's e-mail). New apps are in development mode, which only lets in the owner and the accounts listed there; anyone else gets a 403.
+4. Put the client ID and secret (and the Last.fm key, if you have one) in `config/settings.py`.
+5. Create an empty playlist for songs that don't match anything, copy its link (Share → Copy link to playlist) and paste it into `fallback_playlist_id` in `config/config.json`. The bare playlist ID also works.
 
 Both files are in `.gitignore`.
 
@@ -111,6 +113,17 @@ python main.py --cache-refresh  # only rebuilds the cache
 ```
 
 The first run opens the browser to log in to Spotify and reads all your playlists, so it takes a bit longer. If the song is already in one of your playlists, Pulse warns you before adding it again.
+
+## Troubleshooting
+
+| What you see | What to do |
+|---|---|
+| The browser shows `INVALID_CLIENT: Invalid redirect URI` | The Redirect URI in the app settings must be exactly `http://127.0.0.1:8080` (the same as `SPOTIFY_REDIRECT_URI` in `config/settings.py`). |
+| `Spotify refused access (403)` | The account you logged in with isn't registered on the app. Add it under User Management in the dashboard (step 3 of Setup). |
+| `Nothing playing` while something is playing | Spotify doesn't report the song in a private session, and podcasts and audiobooks aren't songs. Turn off the private session or play a song. |
+| `doesn't look like a Spotify playlist` | Paste the full playlist link into `fallback_playlist_id`; links to tracks or albums don't work. |
+| Logged in with the wrong account | Delete the `.cache` file in the folder you run Pulse from and run it again to log in. |
+| A playlist doesn't show up in the suggestions | Only playlists you own and collaborative ones are considered. If one couldn't be read (rate limit or network), Pulse says so and retries it on the next run; `--refresh` reads everything again. |
 
 ## Tests
 

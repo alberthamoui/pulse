@@ -41,7 +41,7 @@ python main.py [--auto | --dry-run | --refresh | --cache-refresh]
         │
         ├─ 1. Connects to Spotify (OAuth through spotipy)
         │
-        ├─ 2. Gets the song playing right now
+        ├─ 2. Gets the current song (playing or paused)
         │       → if nothing is playing or it's a local file: stops
         │
         ├─ 3. Fetches the user's own playlists and the collaborative ones

@@ -3,11 +3,13 @@
 import json
 
 import pytest
+import spotipy
 
 import main
 from core.models import Track
 from core.playlist_analyzer import smoothed_weights
 
+FALLBACK = "37i9dQZF1DXcBWIGoYBM5M"
 PLAYLISTS = [{"id": "p1", "name": "P1", "snapshot_id": "s1"}]
 PROFILES = {
     "p1": {
@@ -52,7 +54,7 @@ class FakeSpotifyManager:
 def pulse(monkeypatch, tmp_path):
     """run_pulse with a fake Spotify, config and profiles; returns the fake Spotify."""
     FakeSpotifyManager.instances.clear()
-    config = {"fallback_playlist_id": "fb", "cache_file": str(tmp_path / "cache.json")}
+    config = {"fallback_playlist_id": FALLBACK, "cache_file": str(tmp_path / "cache.json")}
     monkeypatch.setattr(main, "load_config", lambda: dict(config))
     monkeypatch.setattr(main, "SpotifyManager", FakeSpotifyManager)
     monkeypatch.setattr(main, "build_profiles_for",
@@ -111,7 +113,7 @@ def test_without_suggestions_enter_picks_the_fallback(pulse, monkeypatch):
     result, spotify, prompts = pulse(answer="")
 
     assert "Enter = f" in prompts[0]
-    assert spotify.added == [("fb", "new")]
+    assert spotify.added == [(FALLBACK, "new")]
 
 
 def test_local_file_is_rejected_before_anything_else(pulse, monkeypatch):
@@ -137,6 +139,131 @@ def test_update_cache_recomputes_weights_from_raw_counts():
     assert profile["total_tracks"] == 6
     assert profile["track_ids"][-2:] == ["t5", "t6"]
     assert snapshots["p1"] == "s3"
+
+
+@pytest.mark.parametrize("value", [
+    FALLBACK,
+    f"https://open.spotify.com/playlist/{FALLBACK}?si=abc123",
+    f"https://open.spotify.com/intl-pt/playlist/{FALLBACK}",
+    f"spotify:playlist:{FALLBACK}",
+    f"  {FALLBACK}\n",
+])
+def test_parse_playlist_id_accepts_id_link_and_uri(value):
+    assert main.parse_playlist_id(value) == FALLBACK
+
+
+@pytest.mark.parametrize("value", [
+    None, "", "paste_your_fallback_playlist_link_here", "id_da_playlist_fallback",
+    "https://open.spotify.com/track/" + FALLBACK, FALLBACK + "x",
+])
+def test_parse_playlist_id_rejects_placeholders_and_other_links(value):
+    assert main.parse_playlist_id(value) is None
+
+
+def test_fallback_link_is_used_as_its_id(pulse, monkeypatch):
+    monkeypatch.setattr(FakeSpotifyManager, "get_current_track",
+                        lambda self: Track(id="new", name="Song", artist="Z", artist_id="unknown"))
+    result, spotify, _ = pulse(answer="", fallback_playlist_id=f"https://open.spotify.com/playlist/{FALLBACK}?si=x")
+
+    assert spotify.added == [(FALLBACK, "new")]
+
+
+def test_placeholder_fallback_stops_before_connecting(monkeypatch):
+    FakeSpotifyManager.instances.clear()
+    monkeypatch.setattr(main, "load_config",
+                        lambda: {"fallback_playlist_id": "paste_your_fallback_playlist_link_here"})
+    monkeypatch.setattr(main, "SpotifyManager", FakeSpotifyManager)
+
+    result = main.run_pulse()
+
+    assert "doesn't look like a Spotify playlist" in result["error"]
+    assert FakeSpotifyManager.instances == []
+
+
+def test_placeholder_credentials_stop_before_connecting(monkeypatch):
+    FakeSpotifyManager.instances.clear()
+    monkeypatch.setattr(main, "load_config", lambda: {"fallback_playlist_id": FALLBACK})
+    monkeypatch.setattr(main, "SpotifyManager", FakeSpotifyManager)
+    monkeypatch.setattr(main, "SPOTIFY_CLIENT_ID", "your_client_id")
+
+    for run in (main.run_pulse, main.run_cache_refresh):
+        result = run()
+        assert not result["success"]
+        assert "config/settings.py" in result["error"]
+    assert FakeSpotifyManager.instances == []
+
+
+def test_403_points_to_user_management(pulse, monkeypatch):
+    def forbidden(self):
+        raise spotipy.SpotifyException(403, -1, "Check settings on developer.spotify.com/dashboard, "
+                                                "the user may not be registered.")
+
+    monkeypatch.setattr(FakeSpotifyManager, "get_current_track", forbidden)
+    result, spotify, prompts = pulse()
+
+    assert "User Management" in result["error"]
+    assert spotify.added == [] and prompts == []
+
+
+def cached(snapshots, profiles):
+    return {"snapshots": snapshots, "profiles": profiles, "artist_names": {},
+            "cached_at": "2026-10-04T00:00:00+00:00"}
+
+
+def fake_build(monkeypatch, readable):
+    """build_profiles_for that only reads the playlists in readable, like a 429 on the rest."""
+    calls = []
+
+    def build(spotify, playlists, matcher_type):
+        calls.append([p["id"] for p in playlists])
+        return {p["id"]: {"id": p["id"], "name": "new"} for p in playlists if p["id"] in readable}, {}
+
+    monkeypatch.setattr(main, "build_profiles_for", build)
+    return calls
+
+
+def test_changed_playlist_that_fails_keeps_old_snapshot_and_is_retried(monkeypatch):
+    playlists = [{"id": "a", "name": "A", "snapshot_id": "s2"}, {"id": "b", "name": "B", "snapshot_id": "s1"}]
+    calls = fake_build(monkeypatch, readable=set())
+
+    profiles, snapshots, _ = main.sync_profiles(
+        None, playlists, cached({"a": "s1", "b": "s1"}, {"a": {"name": "old"}, "b": {"name": "B"}}), "hybrid")
+
+    assert profiles["a"] == {"name": "old"}
+    assert snapshots == {"a": "s1", "b": "s1"}
+
+    main.sync_profiles(None, playlists, cached(snapshots, profiles), "hybrid")
+    assert calls == [["a"], ["a"]]
+
+
+def test_new_playlist_that_fails_has_no_snapshot(monkeypatch):
+    playlists = [{"id": "a", "name": "A", "snapshot_id": "s1"}, {"id": "b", "name": "B", "snapshot_id": "s1"}]
+    fake_build(monkeypatch, readable={"a"})
+
+    profiles, snapshots, _ = main.sync_profiles(None, playlists, None, "hybrid")
+
+    assert set(profiles) == {"a"}
+    assert snapshots == {"a": "s1"}
+
+
+def test_playlist_read_successfully_gets_new_snapshot(monkeypatch):
+    playlists = [{"id": "a", "name": "A", "snapshot_id": "s2"}]
+    fake_build(monkeypatch, readable={"a"})
+
+    profiles, snapshots, _ = main.sync_profiles(None, playlists, cached({"a": "s1"}, {"a": {"name": "old"}}), "hybrid")
+
+    assert profiles["a"]["name"] == "new"
+    assert snapshots == {"a": "s2"}
+
+
+def test_snapshot_without_profile_from_an_old_cache_is_read_again(monkeypatch):
+    playlists = [{"id": "a", "name": "A", "snapshot_id": "s1"}]
+    calls = fake_build(monkeypatch, readable={"a"})
+
+    profiles, _, _ = main.sync_profiles(None, playlists, cached({"a": "s1"}, {}), "hybrid")
+
+    assert calls == [["a"]]
+    assert "a" in profiles
 
 
 def test_cache_from_older_version_is_rebuilt(tmp_path):
