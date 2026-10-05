@@ -5,11 +5,36 @@
 ![ESP32](https://img.shields.io/badge/ESP32-PlatformIO-orange)
 ![License: MIT](https://img.shields.io/badge/license-MIT-green)
 
-Pulse looks at the song currently playing on Spotify and adds it to the playlist where it fits best. It runs as a Python CLI and as a standalone ESP32 device with two buttons and an OLED screen.
+**Hear a song you like, press a button, and Pulse finds the playlist where it belongs.**
 
-I have around 50 playlists, and every time I heard something I liked I had to stop and think about where it should go. Pulse does that part for me: it builds a profile of each playlist from the artists in it, scores the current track against all of them and suggests the top 3.
+![Pulse on a breadboard: ESP32, two buttons and the OLED showing PULSE](docs/device.jpeg)
 
-There's no trained model here. Each playlist is treated like a document and each artist like a word, and the ranking uses TF-IDF plus a co-occurrence signal between artists. So the suggestions come entirely from how I already organize my own music.
+I have around 50 playlists. Every time something good came on, I had to stop, remember what each playlist was about and decide where the song went.
+
+Pulse does that thinking for me. It looks at the song playing on Spotify, compares it with every playlist I've already built and suggests the 3 where it fits best. It runs as a Python CLI and as a standalone ESP32 gadget with two buttons and a small OLED screen, which talks to Spotify on its own: once it's set up, there's no computer, server or phone app involved. When the first suggestion is right, that's two button presses.
+
+## Why it's interesting
+
+- **No model, no training data.** Each playlist is treated like a document and each artist like a word. The ranking is TF-IDF plus a co-occurrence signal between artists, so the suggestions come entirely from how you already organize your music, and it works from the first run.
+- **It places artists you rarely add.** If an artist shows up in only one or two of your playlists, the co-occurrence signal still puts the song next to the artists you usually group them with.
+- **It handles artists you've never added.** When an artist isn't in any playlist, Pulse asks Last.fm for similar artists, finds the ones you already have and ranks your playlists through them. If even that fails, the song goes to a fallback playlist instead of being lost.
+- **About 5 API calls per run.** Reading all my playlists takes around 100 calls, so profiles are cached and a playlist is only re-read when its Spotify `snapshot_id` changes.
+- **Same idea, two very different machines.** The Python version has the full ranking. The firmware does the whole thing in C++ on a microcontroller with a few hundred kilobytes of RAM: HTTPS, OAuth token refresh, pagination over thousands of tracks and the ranking, from flash.
+
+## The device
+
+An ESP32 DevKit, a 1.3" OLED and two buttons on a breadboard. Press a button while anything plays on Spotify, on any device. The screen shows the song, the artist and up to 5 playlists, with the share of that artist in each one and a mark on the playlists that already have the song. Scroll with one button, confirm with the other.
+
+Fitting this into an ESP32 was the fun part:
+
+- **Large responses never sit in RAM.** JSON is parsed straight from the TLS socket through ArduinoJson filters: a 40 KB Last.fm response becomes a few hundred bytes.
+- **A heap fragmentation bug, found and fixed.** Reading my largest playlist (640 tracks) left 100 KB of heap free but no block bigger than 43 KB, and the TLS handshake for the next page failed. Track IDs are now streamed to flash during the sync.
+- **A timeout hidden by C++ name shadowing.** `WiFiClientSecure` declares its own `_timeout`, which hides the one in `Stream`, so the HTTP timeout never reached the JSON parser and large responses were cut after 1 s.
+- **The client secret never touches the device.** Tokens are refreshed with PKCE, the bearer token is only ever sent to `api.spotify.com`, and HTTPS is verified against embedded root CAs instead of `setInsecure()`.
+- **Retries that can't duplicate a song.** Failed `GET`s are retried; a `POST` that times out is not, because it may already have added the song.
+- **Writes that survive a power cut.** Playlist profiles and the rotating refresh token are written to a temp file and then renamed, so a power cut mid-write doesn't leave a half-written file.
+
+The first sync reads about 3,200 tracks in roughly 2.5 minutes. After that, a boot only re-reads what changed and takes about 10 s. Wiring, setup and the details are in [firmware/README.md](firmware/README.md).
 
 ## How it works
 
@@ -52,22 +77,9 @@ score    = 0.8 * (direct + 0.5 * indirect) + 0.2 * genre_overlap
 
 **Which playlists.** Playlists you own and collaborative playlists you follow; playlists you only follow are ignored.
 
-**Cache.** Reading every playlist takes about 100 API calls, so profiles are cached and a playlist is only re-read when its Spotify `snapshot_id` changes. A normal run ends up using around 5 calls. When playlists do need rebuilding, they're fetched in parallel.
+**Cache.** Profiles are cached and only rebuilt when a playlist's `snapshot_id` changes; the ones that do need rebuilding are fetched in parallel. A playlist that fails to load (rate limit, network) keeps its old profile and is retried on the next run. After a song is added, the cache is updated locally, with no extra API call.
 
 There's a longer write-up of the internals in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
-
-## ESP32 device
-
-![Pulse on a breadboard: ESP32, two buttons and the OLED showing PULSE](docs/device.jpeg)
-
-The same idea without a computer: an ESP32 with a 1.3" OLED and two buttons. Press one while something plays on Spotify (on any device), scroll through the suggested playlists and confirm.
-
-- Written in C++ with PlatformIO and the Arduino framework; talks to the Spotify Web API and Last.fm directly over HTTPS with embedded root CAs.
-- Playlist profiles live on the ESP32's flash (LittleFS) and are only re-read when a playlist's `snapshot_id` changes, so a normal boot takes about 10 s.
-- JSON responses are parsed as a stream with filters, so large responses never sit in RAM.
-- Ranks playlists by artist frequency and falls back to Last.fm similar artists for unknown artists, like the Python version.
-
-[Wiring](firmware/README.md#hardware), setup and the problems solved along the way (heap fragmentation during TLS, a shadowed stream timeout, safe retries) are in [firmware/README.md](firmware/README.md).
 
 ## Setup
 
@@ -100,9 +112,11 @@ Other options in `config.json`:
 - `cache_file`: where the profiles are saved, `.pulse_cache.json` by default
 - `auto_add_min_score`: minimum score for `--auto` to add without asking
 
+To build the device, see [firmware/README.md](firmware/README.md).
+
 ## Usage
 
-Play something on Spotify and run:
+Play something on Spotify (playing or paused) and run:
 
 ```bash
 python main.py                  # shows the suggestions and asks where to add
@@ -127,14 +141,14 @@ The first run opens the browser to log in to Spotify and reads all your playlist
 
 ## Tests
 
-The scoring is covered by unit tests that use fake profiles and never touch the network:
+50 tests cover the scoring, the cache sync, the setup checks and the Spotify client, all with fakes and no network:
 
 ```bash
 pip install -r requirements-dev.txt
 pytest
 ```
 
-CI runs them on Python 3.10 and 3.12 and also builds both firmware environments.
+CI runs them with `ruff` on Python 3.10 and 3.12 and also builds both firmware environments.
 
 ## Limitations
 
@@ -142,6 +156,7 @@ CI runs them on Python 3.10 and 3.12 and also builds both firmware environments.
 - The co-occurrence signal only works for artists that are already in at least one playlist.
 - Only the main artist of a track is scored. Featured artists are already read from the API but not used yet.
 - The ESP32 uses a simpler direct ranking (artist frequency, no TF-IDF or co-occurrence) to keep matching to a single pass over flash.
+- The score isn't normalized, so the percentages shown and the `--auto` threshold are only meaningful relative to each other.
 
 ## Next steps
 
