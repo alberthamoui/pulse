@@ -96,11 +96,13 @@ include/config.h       pins, timings and limits
 include/secrets.h      credentials (not versioned)
 src/main.cpp           boot: Wi-Fi, login and sync
 src/state_machine.*    screens and button handling
+src/backend.*          types shared by the modules (song, candidate, errors) and the error texts
 src/spotify_client.*   HTTPS, token refresh, 401/429 handling, retries
 src/spotify_backend.*  current song, ranking and adding to a playlist
 src/profiles.*         playlist profiles on LittleFS
 src/lastfm.*           similar artists from Last.fm
 src/display.*          OLED drawing (U8g2), scrolling text
 src/buttons.*          debounce, click and hold
+src/certs.h            root CAs for Spotify and Last.fm
 src/hwtest/            wiring test (separate env)
 ```

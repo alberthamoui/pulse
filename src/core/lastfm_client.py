@@ -1,9 +1,11 @@
+"""Last.fm client: artists similar to the current one, for artists that aren't in any playlist."""
+
 import json
 import urllib.error
 import urllib.request
 import urllib.parse
 from typing import List, Dict
-from config.constants import LASTFM_SIMILAR_LIMIT, LASTFM_TIMEOUT
+from .constants import LASTFM_SIMILAR_LIMIT, LASTFM_TIMEOUT
 
 LASTFM_BASE = "https://ws.audioscrobbler.com/2.0/"
 

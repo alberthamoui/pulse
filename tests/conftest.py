@@ -2,8 +2,6 @@ import sys
 import types
 from pathlib import Path
 
-import pytest
-
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 sys.path.insert(0, str(ROOT))
@@ -20,17 +18,8 @@ sys.modules["config.settings"] = _settings
 from core.models import PlaylistProfile  # noqa: E402
 
 
-class FakeSpotify:
-    """Stands in for SpotifyManager: no genres, as for apps without extended access."""
-
-    def get_artists_genres(self, artist_ids):
-        return {}
-
-
-@pytest.fixture
-def spotify():
-    return FakeSpotify()
-
-
 def profile(pl_id, weights):
-    return PlaylistProfile(id=pl_id, name=pl_id, artist_weights=weights)
+    """A profile with the given tf per artist, to make the expected scores easy to compute."""
+    p = PlaylistProfile(id=pl_id, name=pl_id)
+    p.artist_weights = weights
+    return p

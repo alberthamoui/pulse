@@ -68,10 +68,10 @@ idf(artist) = log(N / df)      N = number of playlists, df = playlists with that
 ```
 direct   = tf(X, p) * idf(X)
 indirect = sum over other artists Y in p of  jaccard(X, Y) * tf(Y, p) * idf(Y)
-score    = 0.8 * (direct + 0.5 * indirect) + 0.2 * genre_overlap
+score    = direct + 0.5 * indirect
 ```
 
-`jaccard(X, Y)` measures how often X and Y end up in the same playlists. This is what makes a new song from an artist I rarely add still land next to the artists I usually group with them. The weights live in `config/constants.py`.
+`jaccard(X, Y)` measures how often X and Y end up in the same playlists. This is what makes a new song from an artist I rarely add still land next to the artists I usually group with them. The 0.5 lives in `src/core/constants.py`.
 
 **Unknown artists.** If nothing scores above zero, Pulse asks Last.fm for similar artists, finds the ones already in my library and scores the playlists through them. If that also fails, the song goes to a fallback playlist so nothing gets lost.
 
@@ -80,6 +80,39 @@ score    = 0.8 * (direct + 0.5 * indirect) + 0.2 * genre_overlap
 **Cache.** Profiles are cached and only rebuilt when a playlist's `snapshot_id` changes; the ones that do need rebuilding are fetched in parallel. A playlist that fails to load (rate limit, network) keeps its old profile and is retried on the next run. After a song is added, the cache is updated locally, with no extra API call.
 
 There's a longer write-up of the internals in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+
+## Project structure
+
+```
+pulse/
+├── main.py                      command line: run modes, the playlist menu and adding the song
+├── src/core/                    everything main.py uses, one module per job
+│   ├── user_config.py           reads config/settings.py and config/config.json; explains what to fix
+│   ├── client.py                Spotify API: current song, your playlists, add to a playlist
+│   ├── playlist_analyzer.py     reads each playlist and builds its profile (artist counts + track IDs)
+│   ├── cache.py                 keeps the profiles in .pulse_cache.json and re-reads only what changed
+│   ├── matcher.py               ranks the playlists for a song (TF-IDF + co-occurrence, Last.fm fallback)
+│   ├── lastfm_client.py         similar artists from Last.fm
+│   ├── models.py                Track, PlaylistProfile, MatchResult
+│   └── constants.py             tuning knobs: co-occurrence weight, smoothing, timeouts
+├── config/                      your settings.py and config.json (out of git) and their .example templates
+├── tests/                       pytest, no network: one test file per module, plus the CLI flow
+├── tools/get_refresh_token.py   generates the refresh token the ESP32 uses
+├── firmware/                    the ESP32 device (C++/PlatformIO)
+│   ├── include/                 config.h (pins, timings, limits) and secrets.h (credentials, out of git)
+│   └── src/                     boot, state machine, display, buttons, Spotify client, profiles, Last.fm
+└── docs/                        ARCHITECTURE.md (internals in depth) and the photos
+```
+
+**One run of the CLI, through the code:**
+
+1. `main.run_pulse` loads your config with `user_config`; anything missing or still a placeholder stops here with a message saying what to fix.
+2. `client.get_current_track` asks Spotify for the current song.
+3. `cache.sync_profiles` compares each playlist's `snapshot_id` with the cache and sends only the changed ones to `playlist_analyzer`, which reads them in parallel.
+4. `matcher.PlaylistMatcher` ranks every playlist for the song's artist; with no match, it tries `lastfm_client`.
+5. `main` shows the menu, `client` adds the song, and `cache` records it locally so the next run doesn't re-read that playlist.
+
+**The device** follows the same steps in C++: `main.cpp` connects to Wi-Fi and syncs the profiles at boot, then `state_machine.cpp` reacts to the buttons, asks `spotify_backend.cpp` for the song and the ranking (from the profiles on flash in `profiles.cpp`, or `lastfm.cpp`) and draws each screen with `display.cpp`. The file-by-file layout is in [firmware/README.md](firmware/README.md#layout).
 
 ## Setup
 
@@ -108,7 +141,6 @@ Both files are in `.gitignore`.
 
 Other options in `config.json`:
 
-- `algorithm`: `hybrid` (the one described above) or `artist_frequency` (simpler baseline, just artist frequency)
 - `cache_file`: where the profiles are saved, `.pulse_cache.json` by default
 - `auto_add_min_score`: minimum score for `--auto` to add without asking
 
@@ -141,7 +173,7 @@ The first run opens the browser to log in to Spotify and reads all your playlist
 
 ## Tests
 
-50 tests cover the scoring, the cache sync, the setup checks and the Spotify client, all with fakes and no network:
+62 tests cover the ranking, the cache sync, the setup checks, the Spotify and Last.fm clients and the CLI flow, all with fakes and no network:
 
 ```bash
 pip install -r requirements-dev.txt
@@ -152,9 +184,8 @@ CI runs them with `ruff` on Python 3.10 and 3.12 and also builds both firmware e
 
 ## Limitations
 
-- Spotify returns 403 on the artist genres endpoint for apps without extended access, so `genre_overlap` is always 0 right now and the ranking is based only on artists.
 - The co-occurrence signal only works for artists that are already in at least one playlist.
-- Only the main artist of a track is scored. Featured artists are already read from the API but not used yet.
+- Only the main artist of a track is scored; featured artists are ignored.
 - The ESP32 uses a simpler direct ranking (artist frequency, no TF-IDF or co-occurrence) to keep matching to a single pass over flash.
 - The score isn't normalized, so the percentages shown and the `--auto` threshold are only meaningful relative to each other.
 
