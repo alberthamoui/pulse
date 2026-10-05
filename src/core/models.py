@@ -5,7 +5,7 @@ Define as estruturas de dados utilizadas em toda a aplicação.
 """
 
 from dataclasses import dataclass, field
-from typing import Optional, Dict, Any, List
+from typing import Optional, Dict, List
 
 
 @dataclass
@@ -31,6 +31,7 @@ class PlaylistProfile:
     genre_weights: Dict[str, float] = field(default_factory=dict)  # { genre: peso_relativo }
     total_tracks: int = 0
     track_ids: list = field(default_factory=list)
+    artist_counts: Dict[str, int] = field(default_factory=dict)  # { id_artista: faixas }
 
     def __repr__(self) -> str:
         return f"PlaylistProfile(nome={self.nome!r}, artistas={len(self.artista_weights)}, genres={len(self.genre_weights)})"

@@ -50,6 +50,8 @@ score    = 0.8 * (direct + 0.5 * indirect) + 0.2 * genre_overlap
 
 **Unknown artists.** If nothing scores above zero, Pulse asks Last.fm for similar artists, finds the ones already in my library and scores the playlists through them. If that also fails, the song goes to a fallback playlist so nothing gets lost.
 
+**Which playlists.** Playlists you own and collaborative playlists you follow; playlists you only follow are ignored.
+
 **Cache.** Reading every playlist takes about 100 API calls, so profiles are cached and a playlist is only re-read when its Spotify `snapshot_id` changes. A normal run ends up using around 5 calls. When playlists do need rebuilding, they're fetched in parallel.
 
 There's a longer write-up of the internals (in Portuguese) in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
@@ -101,7 +103,7 @@ Other options in `config.json`:
 Play something on Spotify and run:
 
 ```bash
-python main.py                  # shows the top 3 and asks where to add
+python main.py                  # shows the suggestions and asks where to add
 python main.py --auto           # adds to the best match if it passes the minimum score
 python main.py --dry-run        # only shows the ranking
 python main.py --refresh        # rebuilds all profiles before running

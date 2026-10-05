@@ -15,6 +15,21 @@ from .client import SpotifyManager
 from config.constants import LAPLACE_ALPHA, PLAYLIST_WORKERS
 
 
+def smoothed_weights(counts: Dict[str, int]) -> Dict[str, float]:
+    """
+    tf de cada artista com Laplace smoothing: (n + α) / (total + α × V).
+
+    Os pesos sempre saem das contagens brutas, para dar para atualizar o perfil
+    (somar uma faixa) sem precisar desfazer a fórmula.
+    """
+    total = sum(counts.values())
+    V = len(counts)
+    return {
+        artist_id: (count + LAPLACE_ALPHA) / (total + LAPLACE_ALPHA * V)
+        for artist_id, count in counts.items()
+    }
+
+
 class SpotifyPlaylistAnalyzer:
     """Analisa playlists e constrói seus perfis de conteúdo."""
     
@@ -63,32 +78,26 @@ class SpotifyPlaylistAnalyzer:
 
         return tracks, total
     
-    def build_artist_profile(self, playlist_id: str) -> tuple[Dict[str, float], int, list, Dict[str, str]]:
+    def build_artist_profile(
+        self, playlist_id: str
+    ) -> tuple[Dict[str, float], int, list, Dict[str, str], Dict[str, int]]:
         """
         Constrói o perfil de uma playlist baseado em frequência de artistas.
 
         Returns:
             ({ id_artista: peso_relativo }, total_tracks reportado pela API, lista de track IDs,
-             { id_artista: nome_artista })
+             { id_artista: nome_artista }, { id_artista: faixas })
         """
         tracks, total_tracks = self.fetch_tracks(playlist_id)
 
         if not tracks:
-            return {}, total_tracks, [], {}
+            return {}, total_tracks, [], {}, {}
 
         track_ids = [t.id for t in tracks if t.id]
         artist_names = {t.id_artista: t.artista for t in tracks if t.id_artista and t.artista}
-        artist_ids = [t.id_artista for t in tracks if t.id_artista]
-        artist_counter = Counter(artist_ids)
-        total = sum(artist_counter.values())
-        V = len(artist_counter)
+        counts = dict(Counter(t.id_artista for t in tracks if t.id_artista))
 
-        smoothed = {
-            artist_id: (count + LAPLACE_ALPHA) / (total + LAPLACE_ALPHA * V)
-            for artist_id, count in artist_counter.items()
-        }
-
-        return (smoothed, total_tracks, track_ids, artist_names)
+        return smoothed_weights(counts), total_tracks, track_ids, artist_names, counts
     
     def build_genre_profile(self, artist_weights: Dict[str, float]) -> Dict[str, float]:
         """
@@ -127,7 +136,9 @@ class SpotifyPlaylistAnalyzer:
                 return None
 
             try:
-                artist_weights, total_tracks, track_ids, names = self.build_artist_profile(playlist_id)
+                artist_weights, total_tracks, track_ids, names, counts = self.build_artist_profile(
+                    playlist_id
+                )
                 genre_weights = self.build_genre_profile(artist_weights)
             except Exception as e:
                 with lock:
@@ -146,6 +157,7 @@ class SpotifyPlaylistAnalyzer:
                 genre_weights=genre_weights,
                 total_tracks=total_tracks,
                 track_ids=track_ids,
+                artist_counts=counts,
             ), names
 
         with ThreadPoolExecutor(max_workers=PLAYLIST_WORKERS) as executor:
