@@ -18,6 +18,7 @@ sys.path.insert(0, str(ROOT / 'src'))
 sys.path.insert(0, str(ROOT))
 import json
 import os
+import re
 import tempfile
 import time
 from datetime import datetime, timezone
@@ -25,11 +26,44 @@ import spotipy
 from core import SpotifyManager, SpotifyPlaylistAnalyzer, ArtistFrequencyMatcher, HybridMatcher
 from core.models import PlaylistProfile
 from core.playlist_analyzer import smoothed_weights
-from config.settings import SPOTIFY_CLIENT_ID, SPOTIFY_CLIENT_SECRET, SPOTIFY_REDIRECT_URI, LASTFM_API_KEY
+
+try:
+    import config.settings as settings
+except ModuleNotFoundError as e:
+    if e.name != 'config.settings':
+        raise
+    sys.exit("config/settings.py not found. Copy config/settings.example.py to config/settings.py "
+             "and fill in your Spotify app credentials (see Setup in the README).")
+
+# getattr: an older settings.py without one of the optional keys still works
+SPOTIFY_CLIENT_ID     = getattr(settings, 'SPOTIFY_CLIENT_ID', '')
+SPOTIFY_CLIENT_SECRET = getattr(settings, 'SPOTIFY_CLIENT_SECRET', '')
+SPOTIFY_REDIRECT_URI  = getattr(settings, 'SPOTIFY_REDIRECT_URI', 'http://127.0.0.1:8080')
+LASTFM_API_KEY        = getattr(settings, 'LASTFM_API_KEY', '')
 
 DEFAULT_AUTO_ADD_MIN_SCORE = 0.5  # used if 'auto_add_min_score' isn't in config.json
 DEFAULT_ALGORITHM = 'hybrid'
 CACHE_VERSION = 3  # 3: profile keys renamed to English (name, artist_weights)
+PLACEHOLDER_CREDENTIALS = {'', 'your_client_id', 'your_client_secret'}  # as in settings.example.py
+
+
+def check_credentials() -> str | None:
+    """Returns an error message if the Spotify credentials in settings.py aren't filled in."""
+    if {str(SPOTIFY_CLIENT_ID).strip(), str(SPOTIFY_CLIENT_SECRET).strip()} & PLACEHOLDER_CREDENTIALS:
+        return ("SPOTIFY_CLIENT_ID and SPOTIFY_CLIENT_SECRET in config/settings.py aren't filled in. "
+                "Copy them from your app at https://developer.spotify.com/dashboard")
+    return None
+
+
+def parse_playlist_id(value) -> str | None:
+    """
+    Accepts a playlist ID, its link (https://open.spotify.com/playlist/<id>?si=...)
+    or its URI (spotify:playlist:<id>). Returns the ID, or None if it isn't one.
+    """
+    value = str(value or '').strip()
+    match = (re.fullmatch(r'([A-Za-z0-9]{22})', value)
+             or re.search(r'playlist[/:]([A-Za-z0-9]{22})(?![A-Za-z0-9])', value))
+    return match.group(1) if match else None
 
 
 def load_config() -> dict:
@@ -283,6 +317,10 @@ def run_cache_refresh() -> dict:
     cache_file   = config.get('cache_file', '.pulse_cache.json')
     cache_path   = ROOT / cache_file
 
+    credentials_error = check_credentials()
+    if credentials_error:
+        return {'success': False, 'error': credentials_error}
+
     print("Connecting to Spotify...")
     spotify = SpotifyManager(
         client_id=SPOTIFY_CLIENT_ID,
@@ -322,12 +360,18 @@ def run_pulse(mode: str = 'normal') -> dict:
         return {'success': False, 'error': str(e)}
 
     matcher_type = config.get('algorithm', DEFAULT_ALGORITHM)
-    fallback_id  = config.get('fallback_playlist_id')
+    fallback_id  = parse_playlist_id(config.get('fallback_playlist_id'))
     cache_file   = config.get('cache_file', '.pulse_cache.json')
     cache_path   = ROOT / cache_file
 
     if not fallback_id:
-        return {'success': False, 'error': "'fallback_playlist_id' is not set"}
+        return {'success': False, 'error': "'fallback_playlist_id' in config/config.json doesn't look like "
+                                           "a Spotify playlist. Paste the playlist link there "
+                                           "(Share > Copy link to playlist)."}
+
+    credentials_error = check_credentials()
+    if credentials_error:
+        return {'success': False, 'error': credentials_error}
 
     print("Connecting to Spotify...")
     spotify = SpotifyManager(

@@ -8,6 +8,7 @@ import main
 from core.models import Track
 from core.playlist_analyzer import smoothed_weights
 
+FALLBACK = "37i9dQZF1DXcBWIGoYBM5M"
 PLAYLISTS = [{"id": "p1", "name": "P1", "snapshot_id": "s1"}]
 PROFILES = {
     "p1": {
@@ -52,7 +53,7 @@ class FakeSpotifyManager:
 def pulse(monkeypatch, tmp_path):
     """run_pulse with a fake Spotify, config and profiles; returns the fake Spotify."""
     FakeSpotifyManager.instances.clear()
-    config = {"fallback_playlist_id": "fb", "cache_file": str(tmp_path / "cache.json")}
+    config = {"fallback_playlist_id": FALLBACK, "cache_file": str(tmp_path / "cache.json")}
     monkeypatch.setattr(main, "load_config", lambda: dict(config))
     monkeypatch.setattr(main, "SpotifyManager", FakeSpotifyManager)
     monkeypatch.setattr(main, "build_profiles_for",
@@ -111,7 +112,7 @@ def test_without_suggestions_enter_picks_the_fallback(pulse, monkeypatch):
     result, spotify, prompts = pulse(answer="")
 
     assert "Enter = f" in prompts[0]
-    assert spotify.added == [("fb", "new")]
+    assert spotify.added == [(FALLBACK, "new")]
 
 
 def test_local_file_is_rejected_before_anything_else(pulse, monkeypatch):
@@ -137,6 +138,58 @@ def test_update_cache_recomputes_weights_from_raw_counts():
     assert profile["total_tracks"] == 6
     assert profile["track_ids"][-2:] == ["t5", "t6"]
     assert snapshots["p1"] == "s3"
+
+
+@pytest.mark.parametrize("value", [
+    FALLBACK,
+    f"https://open.spotify.com/playlist/{FALLBACK}?si=abc123",
+    f"https://open.spotify.com/intl-pt/playlist/{FALLBACK}",
+    f"spotify:playlist:{FALLBACK}",
+    f"  {FALLBACK}\n",
+])
+def test_parse_playlist_id_accepts_id_link_and_uri(value):
+    assert main.parse_playlist_id(value) == FALLBACK
+
+
+@pytest.mark.parametrize("value", [
+    None, "", "paste_your_fallback_playlist_link_here", "id_da_playlist_fallback",
+    "https://open.spotify.com/track/" + FALLBACK, FALLBACK + "x",
+])
+def test_parse_playlist_id_rejects_placeholders_and_other_links(value):
+    assert main.parse_playlist_id(value) is None
+
+
+def test_fallback_link_is_used_as_its_id(pulse, monkeypatch):
+    monkeypatch.setattr(FakeSpotifyManager, "get_current_track",
+                        lambda self: Track(id="new", name="Song", artist="Z", artist_id="unknown"))
+    result, spotify, _ = pulse(answer="", fallback_playlist_id=f"https://open.spotify.com/playlist/{FALLBACK}?si=x")
+
+    assert spotify.added == [(FALLBACK, "new")]
+
+
+def test_placeholder_fallback_stops_before_connecting(monkeypatch):
+    FakeSpotifyManager.instances.clear()
+    monkeypatch.setattr(main, "load_config",
+                        lambda: {"fallback_playlist_id": "paste_your_fallback_playlist_link_here"})
+    monkeypatch.setattr(main, "SpotifyManager", FakeSpotifyManager)
+
+    result = main.run_pulse()
+
+    assert "doesn't look like a Spotify playlist" in result["error"]
+    assert FakeSpotifyManager.instances == []
+
+
+def test_placeholder_credentials_stop_before_connecting(monkeypatch):
+    FakeSpotifyManager.instances.clear()
+    monkeypatch.setattr(main, "load_config", lambda: {"fallback_playlist_id": FALLBACK})
+    monkeypatch.setattr(main, "SpotifyManager", FakeSpotifyManager)
+    monkeypatch.setattr(main, "SPOTIFY_CLIENT_ID", "your_client_id")
+
+    for run in (main.run_pulse, main.run_cache_refresh):
+        result = run()
+        assert not result["success"]
+        assert "config/settings.py" in result["error"]
+    assert FakeSpotifyManager.instances == []
 
 
 def cached(snapshots, profiles):

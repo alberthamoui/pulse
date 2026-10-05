@@ -41,6 +41,8 @@ def load_client_id() -> str:
             from config import settings
 
             client_id = getattr(settings, "SPOTIFY_CLIENT_ID", "")
+            if client_id == "your_client_id":  # settings.example.py placeholder: ask instead
+                client_id = ""
             if client_id:
                 print("Using the client id from config/settings.py")
         except ImportError:
@@ -50,10 +52,14 @@ def load_client_id() -> str:
 
 
 def main() -> None:
+    client_id = load_client_id()
+    if not client_id:
+        sys.exit("No client ID: fill in SPOTIFY_CLIENT_ID in config/settings.py or set SPOTIPY_CLIENT_ID.")
+
     # No cache on disk: the token only shows up in the terminal. The random state is
     # checked in the callback and protects against CSRF.
     auth = SpotifyPKCE(
-        client_id=load_client_id(),
+        client_id=client_id,
         redirect_uri=REDIRECT_URI,
         scope=SCOPES,
         state=secrets.token_urlsafe(16),
