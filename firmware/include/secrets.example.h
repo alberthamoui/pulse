@@ -8,11 +8,11 @@ namespace secrets {
 constexpr char WIFI_SSID[] = "nome-da-rede";
 constexpr char WIFI_PASSWORD[] = "senha-da-rede";
 
-// App do Spotify Developer Dashboard
+// Client ID do app no Spotify Developer Dashboard. O client secret não vai
+// para o aparelho: o token é renovado com PKCE, que só usa o client id.
 constexpr char SPOTIFY_CLIENT_ID[] = "seu-client-id";
-constexpr char SPOTIFY_CLIENT_SECRET[] = "seu-client-secret";
 
-// Gerado por: python tools/get_refresh_token.py
+// Gerado por: python tools/get_refresh_token.py (fluxo PKCE)
 constexpr char SPOTIFY_REFRESH_TOKEN[] = "seu-refresh-token";
 
 // Playlist para músicas sem destino certo (o mesmo fallback_playlist_id do

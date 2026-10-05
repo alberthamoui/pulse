@@ -23,11 +23,7 @@ bool fetchSimilarArtists(const String& artist, std::vector<SimilarArtist>& out) 
   if (!lastFmEnabled() || artist.isEmpty() || WiFi.status() != WL_CONNECTED) return false;
 
   WiFiClientSecure tls;
-#ifdef PULSE_INSECURE_TLS
-  tls.setInsecure();
-#else
   tls.setCACert(LASTFM_ROOT_CAS);
-#endif
   static_cast<Stream&>(tls).setTimeout(cfg::HTTP_TIMEOUT_MS);  // ver SpotifyClient::begin()
 
   HTTPClient http;

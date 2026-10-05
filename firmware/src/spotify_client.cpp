@@ -3,7 +3,6 @@
 #include <HTTPClient.h>
 #include <LittleFS.h>
 #include <WiFi.h>
-#include <base64.h>
 #include <sys/stat.h>
 
 #include "certs.h"
@@ -22,6 +21,7 @@ constexpr char TOKEN_URL[] = "https://accounts.spotify.com/api/token";
 // Linha 1: o refresh token do secrets.h que originou o salvo. Linha 2: o atual.
 // Se o secrets.h mudar (nova autorização), o arquivo salvo é ignorado.
 constexpr char AUTH_FILE[] = "/auth.txt";
+constexpr char AUTH_TMP[] = "/auth.tmp";
 
 // Erro de transporte (status < 0): sem Wi-Fi ou falha de conexão/TLS.
 BackendError transportError() {
@@ -57,11 +57,7 @@ String urlEncode(const String& s) {
 }
 
 void SpotifyClient::begin() {
-#ifdef PULSE_INSECURE_TLS
-  tls_.setInsecure();  // só para debug: não valida o certificado
-#else
   tls_.setCACert(SPOTIFY_ROOT_CAS);
-#endif
   // O WiFiClientSecure tem um _timeout próprio que esconde o do Stream, então o
   // setTimeout() do HTTPClient não chega no readBytes() usado pelo ArduinoJson,
   // que fica no padrão de 1 s e corta respostas grandes no meio.
@@ -91,7 +87,9 @@ void SpotifyClient::loadRefreshToken() {
 }
 
 void SpotifyClient::saveRefreshToken(const String& token) {
-  File f = LittleFS.open(AUTH_FILE, "w");
+  // O refresh token pode mudar a cada renovação, e o anterior pode deixar de valer:
+  // grava num temporário e renomeia, para uma queda de energia não perder o token
+  File f = LittleFS.open(AUTH_TMP, "w");
   if (!f) {
     Serial.println("[auth] falha ao salvar o refresh token");
     return;
@@ -99,6 +97,13 @@ void SpotifyClient::saveRefreshToken(const String& token) {
   f.println(secrets::SPOTIFY_REFRESH_TOKEN);
   f.println(token);
   f.close();
+  // O LittleFS substitui o destino no rename; se esta versão recusar, remove antes
+  if (!LittleFS.rename(AUTH_TMP, AUTH_FILE)) {
+    LittleFS.remove(AUTH_FILE);
+    if (!LittleFS.rename(AUTH_TMP, AUTH_FILE)) {
+      Serial.println("[auth] falha ao salvar o refresh token");
+    }
+  }
 }
 
 BackendError SpotifyClient::ensureToken() {
@@ -118,23 +123,25 @@ BackendError SpotifyClient::refreshAccessToken() {
   http.setTimeout(cfg::HTTP_TIMEOUT_MS);
   if (!http.begin(tls_, TOKEN_URL)) return BackendError::Api;
   http.addHeader("Content-Type", "application/x-www-form-urlencoded");
-  http.addHeader("Authorization",
-                 "Basic " + base64::encode(String(secrets::SPOTIFY_CLIENT_ID) + ":" +
-                                           secrets::SPOTIFY_CLIENT_SECRET));
 
-  const int status =
-      http.POST("grant_type=refresh_token&refresh_token=" + urlEncode(refreshToken_));
+  // PKCE: o aparelho não guarda o client secret, só o client id vai no corpo
+  const int status = http.POST("grant_type=refresh_token&refresh_token=" +
+                               urlEncode(refreshToken_) +
+                               "&client_id=" + urlEncode(secrets::SPOTIFY_CLIENT_ID));
   if (status <= 0) {
     logHttpError("auth", "falha ao renovar o token", http, status);
     http.end();
     return transportError();
   }
   if (status != 200) {
-    // 400 invalid_grant: refresh token expirado (180 dias), revogado ou de outro client id
+    // 400 invalid_grant: refresh token expirado, revogado ou gerado sem PKCE.
+    // invalid_client: client id errado. Nos dois casos a saída é autorizar de novo.
     const String body = http.getString();
     http.end();
     Serial.printf("[auth] falha ao renovar o token: HTTP %d %s\n", status, body.c_str());
-    return body.indexOf("invalid_grant") >= 0 ? BackendError::AuthExpired : BackendError::Api;
+    const bool reauthorize =
+        body.indexOf("invalid_grant") >= 0 || body.indexOf("invalid_client") >= 0;
+    return reauthorize ? BackendError::AuthExpired : BackendError::Api;
   }
 
   JsonDocument filter;
@@ -159,7 +166,7 @@ BackendError SpotifyClient::refreshAccessToken() {
   expiresAt_ = millis() + expiresIn * 1000UL;
   Serial.printf("[auth] access token renovado (expira em %us)\n", expiresIn);
 
-  // O Spotify pode devolver um refresh token novo; o antigo deixa de ser garantido
+  // A renovação pode devolver um refresh token novo, que passa a ser o válido
   const char* rotated = doc["refresh_token"];
   if (rotated != nullptr && refreshToken_ != rotated) {
     refreshToken_ = rotated;
@@ -171,6 +178,12 @@ BackendError SpotifyClient::refreshAccessToken() {
 
 BackendError SpotifyClient::call(const char* method, const String& url, const String& body,
                                  const JsonDocument& filter, JsonDocument& out, int& status) {
+  // O Bearer token só vai para a API do Spotify: URL completa só se for de lá
+  const String apiPrefix = String(API_BASE) + "/";
+  if (url.startsWith("https://") && !url.startsWith(apiPrefix)) {
+    Serial.printf("[api] URL fora da API do Spotify recusada: %s\n", url.c_str());
+    return BackendError::Api;
+  }
   const String fullUrl = url.startsWith("https://") ? url : String(API_BASE) + url;
   bool retriedAfter401 = false;
   status = 0;
