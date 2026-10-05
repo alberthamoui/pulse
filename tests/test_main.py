@@ -139,6 +139,67 @@ def test_update_cache_recomputes_weights_from_raw_counts():
     assert snapshots["p1"] == "s3"
 
 
+def cached(snapshots, profiles):
+    return {"snapshots": snapshots, "profiles": profiles, "artist_names": {},
+            "cached_at": "2026-10-04T00:00:00+00:00"}
+
+
+def fake_build(monkeypatch, readable):
+    """build_profiles_for that only reads the playlists in readable, like a 429 on the rest."""
+    calls = []
+
+    def build(spotify, playlists, matcher_type):
+        calls.append([p["id"] for p in playlists])
+        return {p["id"]: {"id": p["id"], "name": "new"} for p in playlists if p["id"] in readable}, {}
+
+    monkeypatch.setattr(main, "build_profiles_for", build)
+    return calls
+
+
+def test_changed_playlist_that_fails_keeps_old_snapshot_and_is_retried(monkeypatch):
+    playlists = [{"id": "a", "name": "A", "snapshot_id": "s2"}, {"id": "b", "name": "B", "snapshot_id": "s1"}]
+    calls = fake_build(monkeypatch, readable=set())
+
+    profiles, snapshots, _ = main.sync_profiles(
+        None, playlists, cached({"a": "s1", "b": "s1"}, {"a": {"name": "old"}, "b": {"name": "B"}}), "hybrid")
+
+    assert profiles["a"] == {"name": "old"}
+    assert snapshots == {"a": "s1", "b": "s1"}
+
+    main.sync_profiles(None, playlists, cached(snapshots, profiles), "hybrid")
+    assert calls == [["a"], ["a"]]
+
+
+def test_new_playlist_that_fails_has_no_snapshot(monkeypatch):
+    playlists = [{"id": "a", "name": "A", "snapshot_id": "s1"}, {"id": "b", "name": "B", "snapshot_id": "s1"}]
+    fake_build(monkeypatch, readable={"a"})
+
+    profiles, snapshots, _ = main.sync_profiles(None, playlists, None, "hybrid")
+
+    assert set(profiles) == {"a"}
+    assert snapshots == {"a": "s1"}
+
+
+def test_playlist_read_successfully_gets_new_snapshot(monkeypatch):
+    playlists = [{"id": "a", "name": "A", "snapshot_id": "s2"}]
+    fake_build(monkeypatch, readable={"a"})
+
+    profiles, snapshots, _ = main.sync_profiles(None, playlists, cached({"a": "s1"}, {"a": {"name": "old"}}), "hybrid")
+
+    assert profiles["a"]["name"] == "new"
+    assert snapshots == {"a": "s2"}
+
+
+def test_snapshot_without_profile_from_an_old_cache_is_read_again(monkeypatch):
+    playlists = [{"id": "a", "name": "A", "snapshot_id": "s1"}]
+    calls = fake_build(monkeypatch, readable={"a"})
+
+    profiles, _, _ = main.sync_profiles(None, playlists, cached({"a": "s1"}, {}), "hybrid")
+
+    assert calls == [["a"]]
+    assert "a" in profiles
+
+
 def test_cache_from_older_version_is_rebuilt(tmp_path):
     path = tmp_path / "cache.json"
     path.write_text(json.dumps({"algorithm": "hybrid", "profiles": PROFILES}), encoding="utf-8")
