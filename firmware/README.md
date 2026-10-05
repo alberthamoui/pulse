@@ -51,11 +51,11 @@ You need [PlatformIO](https://platformio.org/) and the same Spotify app used by 
 | Idle (`PULSE`) | look up the current song | look up the current song; hold 3 s to re-sync all playlists |
 | Suggestions | next option | add to the selected playlist |
 
-The suggestion list shows the song and artist at the top and up to 5 playlists with the share of that artist in each one. Options that already contain the song are marked `já` ("already there"). `Fallback` and `Cancelar` are always in the list. With no input for 30 s the screen goes back to idle without adding anything.
+The suggestion list shows the song and artist at the top and up to 5 playlists with the share of that artist in each one. Options that already contain the song are marked `in`. `Fallback` and `Cancel` are always in the list. With no input for 30 s the screen goes back to idle without adding anything.
 
 If the artist isn't in any playlist, the suggestions come from Last.fm instead (top 3, marked with `~`). If that doesn't find anything either, all playlists are listed in alphabetical order.
 
-Errors show for 3 s: no Wi-Fi, nothing playing, local file (not in the Spotify catalog, can't be added), API busy (rate limited) and `Reautorize` when the refresh token expired or was revoked (run `get_refresh_token.py` again).
+Errors show for 3 s: no Wi-Fi, nothing playing, local file (not in the Spotify catalog, can't be added), API busy (rate limited) and `Reauthorize` when the refresh token expired or was revoked (run `get_refresh_token.py` again).
 
 ## How it works
 

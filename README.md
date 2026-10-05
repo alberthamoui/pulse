@@ -54,7 +54,7 @@ score    = 0.8 * (direct + 0.5 * indirect) + 0.2 * genre_overlap
 
 **Cache.** Reading every playlist takes about 100 API calls, so profiles are cached and a playlist is only re-read when its Spotify `snapshot_id` changes. A normal run ends up using around 5 calls. When playlists do need rebuilding, they're fetched in parallel.
 
-There's a longer write-up of the internals (in Portuguese) in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+There's a longer write-up of the internals in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 ## ESP32 device
 

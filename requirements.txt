@@ -1,1 +1,1 @@
-spotipy>=2.25.1  # 2.25.1 grava o .cache com permissão 600 (GHSA-pwhh-q4h6-w599)
+spotipy>=2.25.1  # 2.25.1 writes .cache with 600 permissions (GHSA-pwhh-q4h6-w599)
