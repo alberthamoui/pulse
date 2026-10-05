@@ -38,6 +38,6 @@ jobs:
           path: ~/.platformio
           key: platformio-${{ hashFiles('firmware/platformio.ini') }}
       - run: pip install platformio
-      # O secrets.h real fica fora do git; o exemplo basta para compilar
+      # The real secrets.h stays out of git; the example is enough to build
       - run: cp include/secrets.example.h include/secrets.h
       - run: pio run -e esp32dev -e hwtest

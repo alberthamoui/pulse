@@ -1,8 +1,8 @@
 """
-Analisador de playlists do Spotify.
+Spotify playlist analyzer.
 
-Responsável por extrair dados e construir perfis de playlists
-baseados em frequência relativa de artistas.
+Extracts the data and builds playlist profiles based on the
+relative frequency of artists.
 """
 
 import time
@@ -17,10 +17,10 @@ from config.constants import LAPLACE_ALPHA, PLAYLIST_WORKERS
 
 def smoothed_weights(counts: Dict[str, int]) -> Dict[str, float]:
     """
-    tf de cada artista com Laplace smoothing: (n + α) / (total + α × V).
+    tf of each artist with Laplace smoothing: (n + α) / (total + α × V).
 
-    Os pesos sempre saem das contagens brutas, para dar para atualizar o perfil
-    (somar uma faixa) sem precisar desfazer a fórmula.
+    The weights always come from the raw counts, so the profile can be updated
+    (adding one track) without undoing the formula.
     """
     total = sum(counts.values())
     V = len(counts)
@@ -31,23 +31,23 @@ def smoothed_weights(counts: Dict[str, int]) -> Dict[str, float]:
 
 
 class SpotifyPlaylistAnalyzer:
-    """Analisa playlists e constrói seus perfis de conteúdo."""
+    """Analyzes playlists and builds their content profiles."""
     
     def __init__(self, spotify_manager: SpotifyManager):
         """
-        Inicializa o analisador com um cliente Spotify.
+        Initializes the analyzer with a Spotify client.
         
         Args:
-            spotify_manager: Instância de SpotifyManager para acesso à API
+            spotify_manager: SpotifyManager used to access the API
         """
         self.spotify = spotify_manager
     
     def fetch_tracks(self, playlist_id: str) -> tuple[List[Track], int]:
         """
-        Extrai todas as faixas de uma playlist com paginação.
+        Fetches every track of a playlist, with pagination.
 
         Returns:
-            (lista de Track, total de faixas reportado pela API)
+            (list of Track, total tracks reported by the API)
         """
         tracks = []
         total = 0
@@ -66,9 +66,9 @@ class SpotifyPlaylistAnalyzer:
 
                     track_obj = Track(
                         id=track['id'],
-                        nome=track.get('name', 'Desconhecido'),
-                        artista=first_artist.get('name', 'Desconhecido'),
-                        id_artista=first_artist.get('id')
+                        name=track.get('name', 'Unknown'),
+                        artist=first_artist.get('name', 'Unknown'),
+                        artist_id=first_artist.get('id')
                     )
                     tracks.append(track_obj)
 
@@ -82,11 +82,11 @@ class SpotifyPlaylistAnalyzer:
         self, playlist_id: str
     ) -> tuple[Dict[str, float], int, list, Dict[str, str], Dict[str, int]]:
         """
-        Constrói o perfil de uma playlist baseado em frequência de artistas.
+        Builds a playlist's profile from the frequency of its artists.
 
         Returns:
-            ({ id_artista: peso_relativo }, total_tracks reportado pela API, lista de track IDs,
-             { id_artista: nome_artista }, { id_artista: faixas })
+            ({ artist_id: relative_weight }, total_tracks reported by the API, list of track IDs,
+             { artist_id: artist_name }, { artist_id: tracks })
         """
         tracks, total_tracks = self.fetch_tracks(playlist_id)
 
@@ -94,8 +94,8 @@ class SpotifyPlaylistAnalyzer:
             return {}, total_tracks, [], {}, {}
 
         track_ids = [t.id for t in tracks if t.id]
-        artist_names = {t.id_artista: t.artista for t in tracks if t.id_artista and t.artista}
-        counts = dict(Counter(t.id_artista for t in tracks if t.id_artista))
+        artist_names = {t.artist_id: t.artist for t in tracks if t.artist_id and t.artist}
+        counts = dict(Counter(t.artist_id for t in tracks if t.artist_id))
 
         return smoothed_weights(counts), total_tracks, track_ids, artist_names, counts
     
@@ -117,7 +117,7 @@ class SpotifyPlaylistAnalyzer:
 
     def build_all_profiles(self, playlists: List[Dict[str, str]]) -> tuple[Dict[str, PlaylistProfile], Dict[str, str]]:
         """
-        Constrói perfis para múltiplas playlists.
+        Builds the profiles of several playlists.
 
         Returns:
             (playlist_id → PlaylistProfile, artist_id → artist_name)
@@ -143,7 +143,7 @@ class SpotifyPlaylistAnalyzer:
             except Exception as e:
                 with lock:
                     done[0] += 1
-                    print(f"  [{done[0]}/{total}] {playlist_name}... pulando ({e})")
+                    print(f"  [{done[0]}/{total}] {playlist_name}... skipping ({e})")
                 return None
 
             with lock:
@@ -152,8 +152,8 @@ class SpotifyPlaylistAnalyzer:
 
             return playlist_id, PlaylistProfile(
                 id=playlist_id,
-                nome=playlist_name,
-                artista_weights=artist_weights,
+                name=playlist_name,
+                artist_weights=artist_weights,
                 genre_weights=genre_weights,
                 total_tracks=total_tracks,
                 track_ids=track_ids,
@@ -169,6 +169,6 @@ class SpotifyPlaylistAnalyzer:
                     artist_names.update(names)
 
         elapsed = time.time() - t_start
-        print(f"Análise concluída em {elapsed:.1f}s ({len(profiles)}/{total} playlists).")
+        print(f"Analysis done in {elapsed:.1f}s ({len(profiles)}/{total} playlists).")
         return profiles, artist_names
     

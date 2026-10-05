@@ -1,5 +1,5 @@
 """
-Matcher abstrato - Interface para algoritmos de matching de músicas com playlists.
+Abstract matcher - interface for algorithms that match songs to playlists.
 """
 
 from abc import ABC, abstractmethod
@@ -9,37 +9,37 @@ from .models import Track, MatchResult
 
 class Matcher(ABC):
     """
-    Classe abstrata para algoritmos que fazem matching de músicas com playlists.
+    Abstract class for algorithms that match songs to playlists.
     
-    Um matcher recebe uma música e retorna a melhor playlist para ela
-    baseado em alguma estratégia (frequência de artistas, TF-IDF, etc).
+    A matcher takes a song and returns the best playlist for it
+    based on some strategy (artist frequency, TF-IDF, etc).
     """
     
     @abstractmethod
     def train(self, data: Dict) -> None:
         """
-        Treina o matcher com dados das playlists.
+        Trains the matcher with the playlist data.
         
         Args:
-            data: Dados específicos do algoritmo (perfis, features, etc)
+            data: Algorithm-specific data (profiles, features, etc)
         """
         pass
     
     @abstractmethod
     def match(self, track: Track, **kwargs) -> Optional[MatchResult]:
         """
-        Encontra a melhor playlist para uma faixa.
+        Finds the best playlist for a track.
         
         Args:
-            track: Objeto Track a ser matchado
-            **kwargs: Argumentos adicionais específicos do algoritmo
+            track: Track to match
+            **kwargs: Extra algorithm-specific arguments
             
         Returns:
-            MatchResult com a melhor playlist encontrada, ou None se não houver match
+            MatchResult with the best playlist found, or None if there's no match
         """
         pass
     
     @abstractmethod
     def get_name(self) -> str:
-        """Retorna o nome descritivo do algoritmo."""
+        """Returns the algorithm's descriptive name."""
         pass

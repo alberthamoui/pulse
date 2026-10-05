@@ -1,90 +1,90 @@
-# PULSE — Arquitetura
+# PULSE — Architecture
 
-PULSE monitora a música tocando no Spotify e decide automaticamente em qual das suas playlists adicioná-la, usando um sistema de scoring baseado em análise estatística do histórico de curadoria do usuário.
+PULSE watches the song playing on Spotify and decides which of your playlists it should go to, using a scoring system based on a statistical analysis of how the user already curates their music.
 
 ---
 
-## Estrutura de Arquivos
+## File Layout
 
 ```
 pulse/
-├── main.py                        # Orquestrador principal
+├── main.py                        # Main orchestrator
 ├── config/
-│   ├── constants.py               # Parâmetros do algoritmo (versionado)
-│   ├── settings.py                # Credenciais Spotify + Last.fm (local, fora do git)
-│   ├── config.json                # Configuração do sistema (local, fora do git)
-│   └── *.example.*                # Modelos versionados de settings.py e config.json
+│   ├── constants.py               # Algorithm parameters (versioned)
+│   ├── settings.py                # Spotify + Last.fm credentials (local, kept out of git)
+│   ├── config.json                # System configuration (local, kept out of git)
+│   └── *.example.*                # Versioned templates for settings.py and config.json
 ├── src/
 │   └── core/
 │       ├── models.py              # Data classes
-│       ├── client.py              # SpotifyManager (cliente API)
-│       ├── playlist_analyzer.py   # Análise e perfilagem de playlists
-│       ├── hybrid_matcher.py      # Algoritmo principal de matching
-│       ├── artist_frequency_matcher.py  # Algoritmo alternativo simples
-│       ├── matcher_base.py        # Interface abstrata dos matchers
-│       ├── lastfm_client.py       # Cliente Last.fm para fallback
+│       ├── client.py              # SpotifyManager (API client)
+│       ├── playlist_analyzer.py   # Playlist analysis and profiling
+│       ├── hybrid_matcher.py      # Main matching algorithm
+│       ├── artist_frequency_matcher.py  # Simple alternative algorithm
+│       ├── matcher_base.py        # Abstract matcher interface
+│       ├── lastfm_client.py       # Last.fm client for the fallback
 │       └── __init__.py
-├── firmware/                      # Versão autônoma em ESP32 (C++/PlatformIO), ver firmware/README.md
+├── firmware/                      # Standalone ESP32 version (C++/PlatformIO), see firmware/README.md
 ├── tools/
-│   └── get_refresh_token.py       # Gera o refresh token usado pelo firmware
-├── tests/                         # Testes do scoring (pytest, sem rede)
+│   └── get_refresh_token.py       # Generates the refresh token used by the firmware
+├── tests/                         # Scoring and flow tests (pytest, no network)
 └── docs/
     └── ARCHITECTURE.md
 ```
 
 ---
 
-## Fluxo de Execução
+## Execution Flow
 
 ```
 python main.py [--auto | --dry-run | --refresh | --cache-refresh]
         │
-        ├─ 1. Conecta ao Spotify (OAuth via spotipy)
+        ├─ 1. Connects to Spotify (OAuth through spotipy)
         │
-        ├─ 2. Obtém música tocando agora
-        │       → se nada tocando ou arquivo local: encerra
+        ├─ 2. Gets the song playing right now
+        │       → if nothing is playing or it's a local file: stops
         │
-        ├─ 3. Busca as playlists do usuário e as colaborativas
+        ├─ 3. Fetches the user's own playlists and the collaborative ones
         │
-        ├─ 4. Sincroniza cache (veja seção Cache)
-        │       → --refresh: reconstrói tudo
-        │       → normal: atualiza só playlists com snapshot_id diferente
+        ├─ 4. Syncs the cache (see the Cache section)
+        │       → --refresh: rebuilds everything
+        │       → normal: updates only playlists with a different snapshot_id
         │
-        ├─ 5. Treina o HybridMatcher com os perfis
-        │       → computa IDF de cada artista
-        │       → constrói índice de co-ocorrência
-        │       → constrói lookup nome → id para Last.fm
+        ├─ 5. Trains the HybridMatcher with the profiles
+        │       → computes each artist's IDF
+        │       → builds the co-occurrence index
+        │       → builds the name → id lookup for Last.fm
         │
-        ├─ 6. Aviso de duplicata
-        │       → verifica se a música já está em alguma playlist (via cache)
-        │       → se sim: pergunta se quer continuar
-        │         (--auto: não adiciona; --dry-run: só avisa)
+        ├─ 6. Duplicate warning
+        │       → checks whether the song is already in some playlist (through the cache)
+        │       → if so: asks whether to continue
+        │         (--auto: doesn't add; --dry-run: only warns)
         │
-        ├─ 7. Scoring e seleção de playlist
-        │       → tenta TF-IDF + co-ocorrência
-        │       → se score=0 em tudo e Last.fm configurado: tenta fallback Last.fm
-        │       → apresenta top 3 candidatas ao usuário
+        ├─ 7. Scoring and playlist selection
+        │       → tries TF-IDF + co-occurrence
+        │       → if everything scores 0 and Last.fm is set up: tries the Last.fm fallback
+        │       → shows the top 3 candidates to the user
         │
-        ├─ 8. Usuário confirma ou escolhe outra playlist (qualquer algoritmo)
-        │       → --auto: adiciona sem perguntar se score ≥ auto_add_min_score
-        │       → --dry-run: mostra os candidatos e encerra sem adicionar
+        ├─ 8. The user confirms or picks another playlist (any algorithm)
+        │       → --auto: adds without asking if score ≥ auto_add_min_score
+        │       → --dry-run: shows the candidates and stops without adding
         │
-        ├─ 9. Adiciona música à playlist escolhida
+        ├─ 9. Adds the song to the chosen playlist
         │
-        └─10. Atualiza cache localmente (sem chamada extra à API)
+        └─10. Updates the cache locally (no extra API call)
 ```
 
 ---
 
-## Chamadas à API do Spotify
+## Spotify API Calls
 
-| Cenário | Chamadas |
+| Scenario | Calls |
 |---|---|
-| Run normal com cache válido | ~5 |
-| Run com N playlists alteradas | ~5 + N × páginas |
+| Normal run with a valid cache | ~5 |
+| Run with N changed playlists | ~5 + N × pages |
 | `--refresh` (46 playlists) | ~101 |
 
-O contador `spotify.api_calls` é exibido ao final de cada execução. Toda chamada é interceptada via monkey-patch em `client.py:44`.
+The `spotify.api_calls` counter is shown at the end of each run. Every call is intercepted through a monkey-patch on `_internal_call` in `client.py`.
 
 ---
 
@@ -92,20 +92,20 @@ O contador `spotify.api_calls` é exibido ao final de cada execução. Toda cham
 
 ```json
 {
-  "version": 2,
+  "version": 3,
   "algorithm": "hybrid",
   "cached_at": "2026-05-23T...",
   "snapshots": {
-    "playlist_id": "snapshot_id_atual"
+    "playlist_id": "current_snapshot_id"
   },
   "artist_names": {
-    "artist_id": "Nome do Artista"
+    "artist_id": "Artist Name"
   },
   "profiles": {
     "playlist_id": {
       "id": "...",
-      "nome": "Nome da Playlist",
-      "artista_weights": { "artist_id": 0.142 },
+      "name": "Playlist Name",
+      "artist_weights": { "artist_id": 0.142 },
       "genre_weights": {},
       "total_tracks": 28,
       "track_ids": ["track_id_1", "track_id_2"],
@@ -115,129 +115,129 @@ O contador `spotify.api_calls` é exibido ao final de cada execução. Toda cham
 }
 ```
 
-**Invalidação inteligente:** a cada run, o `snapshot_id` de cada playlist é comparado com o do cache. Só playlists que mudaram são re-analisadas. Playlists removidas são descartadas do cache. Um cache de outra `version` (formato antigo) é descartado e reconstruído.
+**Smart invalidation:** on every run, each playlist's `snapshot_id` is compared with the cached one. Only the playlists that changed are analyzed again. Removed playlists are dropped from the cache. A cache with a different `version` (old format) is discarded and rebuilt.
 
-**Atualização pós-adição:** após adicionar uma música, o cache é atualizado localmente:
-- `track_ids` da playlist recebe o novo track id e `total_tracks` soma 1
-- `artist_counts` soma 1 para o artista, e `artista_weights` é recalculado a partir das contagens brutas (com o mesmo Laplace smoothing do build), sem chamada à API
-- `snapshot_id` é atualizado com o valor retornado pelo endpoint de adição
+**Update after adding:** after a song is added, `update_cache()` updates the cache locally:
+- the playlist's `track_ids` gets the new track id and `total_tracks` goes up by 1
+- `artist_counts` goes up by 1 for the artist, and `artist_weights` is recomputed from the raw counts (with the same Laplace smoothing as the build), with no API call
+- `snapshot_id` is set to the value returned by the add endpoint
 
-O arquivo é gravado num temporário e trocado com `os.replace`, para uma interrupção no meio não corromper o cache.
+The file is written to a temp file and swapped in with `os.replace`, so an interruption halfway doesn't corrupt the cache.
 
 ---
 
-## Algoritmo de Scoring (HybridMatcher)
+## Scoring Algorithm (HybridMatcher)
 
-### 1. Construção dos Perfis (build time)
+### 1. Building the Profiles (build time)
 
-Para cada playlist, `SpotifyPlaylistAnalyzer.build_artist_profile()` busca todas as faixas via paginação e calcula:
+For each playlist, `SpotifyPlaylistAnalyzer.build_artist_profile()` fetches every track with pagination and computes:
 
 ```
-tf(artista, playlist) = (aparições + α) / (total_tracks + α × V)
+tf(artist, playlist) = (appearances + α) / (total_tracks + α × V)
 ```
 
-Onde `α = 1` (Laplace smoothing) e `V` = número de artistas únicos na playlist.
+Where `α = 1` (Laplace smoothing) and `V` = number of distinct artists in the playlist.
 
-O smoothing evita que playlists pequenas dominem com pesos inflados (ex: 1 artista em 3 músicas = 0.33 sem smoothing → 0.25 com smoothing se V=3).
+The smoothing keeps small playlists from dominating with inflated weights (e.g. 1 artist in 3 songs = 0.33 without smoothing → 0.25 with smoothing if V=3).
 
-### 2. Treinamento (train time)
+### 2. Training (train time)
 
-O `HybridMatcher.train()` computa duas estruturas em memória:
+`HybridMatcher.train()` computes two structures in memory:
 
-**IDF por artista:**
+**IDF per artist:**
 ```
-idf(artista) = log(N / df)
+idf(artist) = log(N / df)
 ```
-Onde `N` = total de playlists e `df` = número de playlists que contêm o artista.
-Artistas presentes em muitas playlists recebem IDF baixo (pouco discriminativos).
+Where `N` = total number of playlists and `df` = number of playlists that contain the artist.
+Artists that show up in many playlists get a low IDF (they don't discriminate much).
 
-**Índice de co-ocorrência:**
+**Co-occurrence index:**
 ```
 artist_to_playlists = { artist_id: {pl_id_1, pl_id_2, ...} }
 ```
-Usado para calcular Jaccard entre artistas na hora do match.
+Used to compute the Jaccard between artists at match time.
 
-### 3. Scoring por Playlist (match time)
+### 3. Scoring per Playlist (match time)
 
-Para a música tocando, com artista X:
+For the song playing, with artist X:
 
-**Score direto:**
+**Direct score:**
 ```
 tfidf(X, playlist) = tf(X, playlist) × idf(X)
 ```
 
-**Score indireto via co-ocorrência:**
+**Indirect score through co-occurrence:**
 ```
 indirect = Σ Jaccard(X, Y) × tf(Y, playlist) × idf(Y)
-           para todo artista Y na playlist
+           for every artist Y in the playlist
 ```
 
-Onde `Jaccard(X, Y) = |playlists_com_X ∩ playlists_com_Y| / |playlists_com_X ∪ playlists_com_Y|`
+Where `Jaccard(X, Y) = |playlists_with_X ∩ playlists_with_Y| / |playlists_with_X ∪ playlists_with_Y|`
 
-O Jaccard é calculado uma vez por match e cacheado localmente — não são chamadas à API.
+The Jaccard is computed once per match and cached locally; there are no API calls.
 
-**Score final:**
+**Final score:**
 ```
 artist_score = tfidf + β × indirect     (β = 0.5)
-score_final  = α × artist_score + (1-α) × genre_overlap    (α = 0.8)
+final_score  = α × artist_score + (1-α) × genre_overlap    (α = 0.8)
 ```
 
-`genre_overlap` é sempre 0 atualmente porque o endpoint de gêneros da Spotify API retorna 403.
+`genre_overlap` is always 0 right now because the Spotify API genres endpoint returns 403.
 
-### 4. Fallback Last.fm
+### 4. Last.fm Fallback
 
-Ativado apenas quando `score_final = 0` para todas as playlists (artista completamente desconhecido).
+Only kicks in when `final_score = 0` for every playlist (a completely unknown artist).
 
-1. Chama `artist.getSimilar` na Last.fm API — 1 request HTTP externo
-2. Para cada artista similar retornado, busca no lookup `nome → id` construído no `train()`
-3. Playlists que contêm artistas similares recebem score:
+1. Calls `artist.getSimilar` on the Last.fm API: 1 external HTTP request
+2. Looks up each similar artist returned in the `name → id` lookup built in `train()`
+3. Playlists that contain similar artists get a score:
 ```
 score_lastfm(playlist) = Σ match_lastfm(Y) × tf(Y, playlist) × idf(Y)
 ```
 
-Se Last.fm também não resolver: vai para FALLBACK_PULSE.
+If Last.fm doesn't solve it either: the song goes to FALLBACK_PULSE.
 
 ---
 
-## Componentes
+## Components
 
 ### `models.py`
 ```python
-Track            — id, nome, artista, id_artista, artistas, artistas_nomes
-PlaylistProfile  — id, nome, artista_weights, genre_weights, total_tracks, track_ids, artist_counts
+Track            — id, name, artist, artist_id, artist_ids, artist_names
+PlaylistProfile  — id, name, artist_weights, genre_weights, total_tracks, track_ids, artist_counts
 MatchResult      — playlist_id, playlist_name, score, match_type, reason
 ```
 
 ### `client.py` — SpotifyManager
-- `get_current_track()` → Track atual
-- `get_user_playlists()` → lista paginada (playlists do próprio usuário e colaborativas, como no firmware)
-- `get_artists_genres()` → batch de 50, retorna `{}` silenciosamente se endpoint indisponível
-- `add_track_to_playlist()` → retorna novo `snapshot_id` (vem da resposta do endpoint)
-- Contador `api_calls` via monkey-patch em `_internal_call`
+- `get_current_track()` → current Track
+- `get_user_playlists()` → paginated list (the user's own playlists and the collaborative ones, as in the firmware)
+- `get_artists_genres()` → batches of 50, silently returns `{}` if the endpoint is unavailable
+- `add_track_to_playlist()` → returns the new `snapshot_id` (from the endpoint's response)
+- `api_calls` counter through a monkey-patch on `_internal_call`
 
 ### `playlist_analyzer.py` — SpotifyPlaylistAnalyzer
-- `fetch_tracks()` → `(List[Track], total)` — paginação de 100 por request
-- `build_artist_profile()` → `(artista_weights, total_tracks, track_ids, artist_names, artist_counts)`
-- `smoothed_weights(counts)` → pesos com Laplace smoothing; usado no build e na atualização pós-adição
-- `build_all_profiles()` → paralelo com `ThreadPoolExecutor(max_workers=5)`, retorna `(profiles, artist_names)`
+- `fetch_tracks()` → `(List[Track], total)`, 100 tracks per request
+- `build_artist_profile()` → `(artist_weights, total_tracks, track_ids, artist_names, artist_counts)`
+- `smoothed_weights(counts)` → weights with Laplace smoothing; used in the build and in the update after adding
+- `build_all_profiles()` → parallel with `ThreadPoolExecutor(max_workers=5)`, returns `(profiles, artist_names)`
 
 ### `hybrid_matcher.py` — HybridMatcher
-Algoritmo principal. Implementa TF-IDF + Laplace + co-ocorrência + fallback Last.fm.
-- `train(profiles, artist_names)` → computa IDF, índice co-ocorrência, lookup nome→id
-- `top_matches(track, n=3)` → top N com score > 0
-- `lastfm_fallback(track, api_key)` → ativado só quando top_matches retorna vazio
+Main algorithm. Implements TF-IDF + Laplace + co-occurrence + the Last.fm fallback.
+- `train(profiles, artist_names)` → computes the IDF, the co-occurrence index and the name→id lookup
+- `top_matches(track, n=3)` → top N with score > 0
+- `lastfm_fallback(track, api_key)` → only used when top_matches comes back empty
 
 ### `lastfm_client.py`
-- `get_similar_artists(artist_name, api_key)` → lista de `{name, match}` via stdlib `urllib`
-- Timeout de 5s, retorna `[]` em qualquer erro
+- `get_similar_artists(artist_name, api_key)` → list of `{name, match}` through the stdlib `urllib`
+- 5 s timeout, returns `[]` on any error
 
 ### `artist_frequency_matcher.py` — ArtistFrequencyMatcher
-Algoritmo alternativo simples: score = frequência relativa do artista na playlist.
-Disponível via `config.json: "algorithm": "artist_frequency"`.
+Simple alternative algorithm: score = relative frequency of the artist in the playlist.
+Available through `config.json: "algorithm": "artist_frequency"`.
 
 ---
 
-## Configuração
+## Configuration
 
 ### `config/settings.py`
 ```python
@@ -251,32 +251,32 @@ LASTFM_API_KEY        = "..."   # https://www.last.fm/api/account/create
 ```json
 {
   "algorithm": "hybrid",
-  "fallback_playlist_id": "id_da_playlist_fallback",
+  "fallback_playlist_id": "fallback_playlist_id",
   "cache_file": ".pulse_cache.json",
   "auto_add_min_score": 0.5
 }
 ```
 
-`auto_add_min_score` é o score mínimo para o `--auto` adicionar sem perguntar (padrão 0.5).
+`auto_add_min_score` is the minimum score for `--auto` to add without asking (0.5 by default).
 
 ---
 
-## Modos de Execução
+## Run Modes
 
 ```bash
-python main.py                 # usa cache, atualiza só o que mudou
-python main.py --auto          # adiciona sem perguntar se o score passar do mínimo
-python main.py --dry-run       # mostra os candidatos, não adiciona nada
-python main.py --refresh       # força reanálise de todas as playlists
-python main.py --cache-refresh # só reconstrói o cache, sem olhar a música tocando
+python main.py                 # uses the cache, updates only what changed
+python main.py --auto          # adds without asking if the score passes the minimum
+python main.py --dry-run       # shows the candidates, adds nothing
+python main.py --refresh       # forces every playlist to be analyzed again
+python main.py --cache-refresh # only rebuilds the cache, without looking at the current song
 ```
 
-No modo normal, exibe as top 3 playlists candidatas com score e motivo e pede confirmação antes de adicionar (`[1-3]` playlists, `l` Músicas Curtidas, `f` FALLBACK_PULSE, `n` cancelar).
+In normal mode, it shows the top 3 candidate playlists with score and reason and asks for confirmation before adding (`[1-3]` playlists, `l` Liked Songs, `f` FALLBACK_PULSE, `n` cancel).
 
 ---
 
-## Limitações Conhecidas
+## Known Limitations
 
-- **Gêneros indisponíveis:** endpoint `GET /v1/artists` retorna 403 para apps não aprovados pelo Spotify. `genre_weights` fica sempre vazio.
-- **Artistas novos sem Last.fm:** se o artista não está em nenhuma playlist E Last.fm não tem dados ou não há artistas similares nas playlists, o menu não tem sugestões e o Enter escolhe a FALLBACK_PULSE (no `--auto`, nada é adicionado).
-- **Co-ocorrência depende do histórico próprio:** Jaccard só funciona para artistas que já aparecem em pelo menos uma playlist do usuário.
+- **Genres unavailable:** the `GET /v1/artists` endpoint returns 403 for apps not approved by Spotify. `genre_weights` is always empty.
+- **New artists without Last.fm:** if the artist isn't in any playlist AND Last.fm has no data or none of the similar artists are in the playlists, the menu has no suggestions and Enter picks FALLBACK_PULSE (with `--auto`, nothing is added).
+- **Co-occurrence depends on your own history:** Jaccard only works for artists that already appear in at least one of the user's playlists.

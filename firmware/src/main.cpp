@@ -11,7 +11,7 @@
 #include "state_machine.h"
 
 #if !__has_include("secrets.h")
-#error "Crie include/secrets.h a partir de include/secrets.example.h"
+#error "Create include/secrets.h from include/secrets.example.h"
 #endif
 #include "secrets.h"
 
@@ -24,7 +24,7 @@ Profiles profiles(spotify);
 SpotifyBackend backend(spotify, profiles);
 StateMachine machine(display, buttons, backend);
 
-// Mostra uma mensagem por durationMs, redesenhando para os textos longos rolarem.
+// Shows a message for durationMs, redrawing so long texts scroll.
 void showMessage(const char* line1, const char* line2, uint32_t durationMs) {
   const uint32_t start = millis();
   while (millis() - start < durationMs) {
@@ -37,39 +37,39 @@ bool connectWifi() {
   WiFi.mode(WIFI_STA);
   WiFi.setAutoReconnect(true);
   WiFi.begin(secrets::WIFI_SSID, secrets::WIFI_PASSWORD);
-  Serial.printf("[wifi] conectando em %s\n", secrets::WIFI_SSID);
+  Serial.printf("[wifi] connecting to %s\n", secrets::WIFI_SSID);
 
   const uint32_t start = millis();
   while (WiFi.status() != WL_CONNECTED) {
     const uint32_t elapsed = millis() - start;
     if (elapsed >= cfg::WIFI_TIMEOUT_MS) {
-      Serial.printf("[wifi] falhou (status %d)\n", WiFi.status());
+      Serial.printf("[wifi] failed (status %d)\n", WiFi.status());
       return false;
     }
-    // O roteador às vezes recusa a primeira tentativa: tenta de novo até o timeout
+    // The router sometimes refuses the first attempt: retries until the timeout
     const wl_status_t status = WiFi.status();
     if (status == WL_CONNECT_FAILED || status == WL_NO_SSID_AVAIL) {
-      Serial.printf("[wifi] tentativa recusada (status %d), tentando de novo\n", status);
+      Serial.printf("[wifi] attempt refused (status %d), retrying\n", status);
       WiFi.disconnect();
       delay(500);
       WiFi.begin(secrets::WIFI_SSID, secrets::WIFI_PASSWORD);
     }
-    display.progress("Conectando Wi-Fi", elapsed * 100 / cfg::WIFI_TIMEOUT_MS);
+    display.progress("Connecting Wi-Fi", elapsed * 100 / cfg::WIFI_TIMEOUT_MS);
     delay(200);
   }
-  Serial.printf("[wifi] conectado, IP %s, sinal %d dBm\n", WiFi.localIP().toString().c_str(),
+  Serial.printf("[wifi] connected, IP %s, signal %d dBm\n", WiFi.localIP().toString().c_str(),
                 WiFi.RSSI());
   return true;
 }
 
-// Wi-Fi, token, GET /me e sync dos perfis (só o que mudou desde o último boot).
+// Wi-Fi, token, GET /me and profile sync (only what changed since the last boot).
 void bootOnline() {
   if (!connectWifi()) {
     showMessage(errorMessage(BackendError::NoWifi), "", cfg::ERROR_MS);
     return;
   }
 
-  display.progress("Entrando no Spotify", 50);
+  display.progress("Signing in to Spotify", 50);
   SpotifyUser me;
   const BackendError err = spotify.getMe(me);
   if (err != BackendError::None) {
@@ -77,12 +77,12 @@ void bootOnline() {
     return;
   }
 
-  Serial.printf("[spotify] usuario: %s (id %s)\n", me.displayName.c_str(), me.id.c_str());
-  showMessage("Olá,", me.displayName.c_str(), cfg::GREETING_MS);
+  Serial.printf("[spotify] user: %s (id %s)\n", me.displayName.c_str(), me.id.c_str());
+  showMessage("Hi,", me.displayName.c_str(), cfg::GREETING_MS);
 
   profiles.setUserId(me.id);
   const BackendError syncErr =
-      profiles.sync(false, [](uint8_t pct) { display.progress("Sincronizando", pct); });
+      profiles.sync(false, [](uint8_t pct) { display.progress("Syncing", pct); });
   if (syncErr != BackendError::None) {
     showMessage(errorMessage(syncErr), errorDetail(syncErr), cfg::ERROR_MS);
   }
@@ -97,7 +97,7 @@ void setup() {
 
   display.begin();
   buttons.begin();
-  if (!LittleFS.begin(true)) Serial.println("[fs] falha ao montar o LittleFS");
+  if (!LittleFS.begin(true)) Serial.println("[fs] failed to mount LittleFS");
   spotify.begin();
   profiles.begin();
 

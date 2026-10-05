@@ -14,17 +14,17 @@ namespace {
 
 constexpr char PROFILE_DIR[] = "/p";
 constexpr char FORMAT_TAG[] = "PULSE3";
-constexpr int HEADER_LINES = 4;  // formato, snapshot, nome e total
+constexpr int HEADER_LINES = 4;  // format, snapshot, name and total
 
 String profilePath(const String& id) { return String(PROFILE_DIR) + "/" + id + ".txt"; }
 
-// LittleFS.exists() loga um erro quando o arquivo não existe; stat() não
+// LittleFS.exists() logs an error when the file doesn't exist; stat() doesn't
 bool fileExists(const String& path) {
   struct stat st;
   return stat((String("/littlefs") + path).c_str(), &st) == 0;
 }
 
-// Nomes vão numa linha do perfil
+// Names go on a single line of the profile
 String cleanName(String s) {
   s.replace('\r', ' ');
   s.replace('\n', ' ');
@@ -33,7 +33,7 @@ String cleanName(String s) {
 
 String readLine(File& f) {
   String line = f.readStringUntil('\n');
-  line.trim();  // println grava "\r\n"
+  line.trim();  // println writes "\r\n"
   return line;
 }
 
@@ -41,9 +41,9 @@ bool idEquals(const char* s, size_t len, const String& id) {
   return len == id.length() && strncmp(s, id.c_str(), len) == 0;
 }
 
-// Chama fn(linha, tamanho) para cada linha "x ..." depois das skip primeiras,
-// até o fim ou até fn retornar false. Lê em blocos, bem mais rápido que
-// readStringUntil. Linhas maiores que o buffer são truncadas.
+// Calls fn(line, length) for each "x ..." line after the first skip lines,
+// until the end or until fn returns false. Reads in blocks, much faster than
+// readStringUntil. Lines longer than the buffer are truncated.
 template <typename Fn>
 void forEachLine(File& f, int skip, Fn fn) {
   char buf[256];
@@ -68,7 +68,7 @@ void forEachLine(File& f, int skip, Fn fn) {
   }
 }
 
-// Percorre o perfil: quantas faixas são de artistId e se trackId já está na playlist.
+// Walks the profile: how many tracks are by artistId and whether trackId is already in the playlist.
 void scanProfile(File& f, const String& artistId, const String& trackId, uint32_t& count,
                  bool& hasTrack) {
   count = 0;
@@ -82,19 +82,19 @@ void scanProfile(File& f, const String& artistId, const String& trackId, uint32_
       }
     } else if (line[0] == 't' && idEquals(id, len - 2, trackId)) {
       hasTrack = true;
-      return false;  // as linhas "t" vêm depois das "a": nada mais a procurar
+      return false;  // the "t" lines come after the "a" ones: nothing left to look for
     }
     return true;
   });
 }
 
-// Percorre as linhas "a <id> <n> <nome>": counts[j] recebe as faixas do
-// artista parecido j na playlist.
+// Walks the "a <id> <n> <name>" lines: counts[j] gets the tracks of the
+// similar artist j in the playlist.
 void scanSimilar(File& f, const std::vector<SimilarArtist>& similar,
                  std::vector<uint16_t>& counts) {
   counts.assign(similar.size(), 0);
   forEachLine(f, HEADER_LINES, [&](const char* line, size_t) {
-    if (line[0] != 'a') return false;  // começaram as linhas "t"
+    if (line[0] != 'a') return false;  // the "t" lines started
     const char* sep = strchr(line + 2, ' ');
     if (sep == nullptr) return true;
     char* name = nullptr;
@@ -108,7 +108,7 @@ void scanSimilar(File& f, const std::vector<SimilarArtist>& similar,
   });
 }
 
-// Copia as linhas "t" de src (pulando as skip primeiras) para dst.
+// Copies the "t" lines from src (skipping the first skip lines) to dst.
 void copyTrackLines(File& src, int skip, File& dst) {
   forEachLine(src, skip, [&](const char* line, size_t) {
     if (line[0] == 't') dst.println(line);
@@ -150,7 +150,7 @@ void Profiles::begin() {
     if (readHeader(name.substring(0, name.length() - 4), p)) playlists_.push_back(std::move(p));
   }
   dir.close();
-  Serial.printf("[perfis] %u playlists no cache\n", static_cast<unsigned>(playlists_.size()));
+  Serial.printf("[profiles] %u playlists in the cache\n", static_cast<unsigned>(playlists_.size()));
 }
 
 bool Profiles::readHeader(const String& id, Playlist& p) const {
@@ -182,7 +182,7 @@ bool Profiles::load(const String& id, Playlist& p, Counts& counts) const {
       a.n = line.substring(sep + 1, nameSep < 0 ? line.length() : nameSep).toInt();
       if (nameSep > 0) a.name = line.substring(nameSep + 1);
     } else if (line.startsWith("t ")) {
-      break;  // as linhas "t" vêm depois das "a"
+      break;  // the "t" lines come after the "a" ones
     }
   }
   f.close();
@@ -191,7 +191,7 @@ bool Profiles::load(const String& id, Playlist& p, Counts& counts) const {
 
 bool Profiles::write(const Playlist& p, const Counts& counts,
                      const std::function<void(File&)>& writeTracks) const {
-  // Grava num temporário e renomeia: uma queda de energia não deixa perfil pela metade
+  // Writes to a temp file and renames: a power cut doesn't leave a half-written profile
   const String path = profilePath(p.id);
   const String tmp = String(PROFILE_DIR) + "/" + p.id + ".tmp";
   File f = LittleFS.open(tmp, "w");
@@ -223,8 +223,8 @@ BackendError Profiles::fetchPlaylists(std::vector<Playlist>& out) {
   item["snapshot_id"] = true;
   item["collaborative"] = true;
   item["owner"]["id"] = true;
-  item["items"]["total"] = true;   // fev/2026: "tracks" virou "items"
-  item["tracks"]["total"] = true;  // nome antigo, de fallback
+  item["items"]["total"] = true;   // Feb/2026: "tracks" became "items"
+  item["tracks"]["total"] = true;  // old name, as a fallback
 
   JsonDocument doc;
   for (uint32_t offset = 0;; offset += cfg::PAGE_LIMIT) {
@@ -244,7 +244,7 @@ BackendError Profiles::fetchPlaylists(std::vector<Playlist>& out) {
       pl.name = cleanName(p["name"] | "");
       pl.snapshot = p["snapshot_id"] | "";
       pl.apiTotal = p["items"]["total"] | (p["tracks"]["total"] | 0);
-      // A API às vezes repete uma playlist na listagem
+      // The API sometimes repeats a playlist in the listing
       const bool duplicate = std::any_of(out.begin(), out.end(),
                                          [&](const Playlist& o) { return o.id == pl.id; });
       if (!pl.id.isEmpty() && !duplicate) out.push_back(std::move(pl));
@@ -256,10 +256,10 @@ BackendError Profiles::fetchPlaylists(std::vector<Playlist>& out) {
 
 BackendError Profiles::build(Playlist& p, uint32_t& done, uint32_t toFetch,
                              const ProgressFn& progress, int& status) {
-  Serial.printf("[perfis] lendo '%s' (%u faixas)\n", p.name.c_str(), p.apiTotal);
+  Serial.printf("[profiles] reading '%s' (%u tracks)\n", p.name.c_str(), p.apiTotal);
 
-  // Os IDs das faixas vão direto para um arquivo: centenas de Strings na RAM
-  // fragmentam o heap e o handshake TLS das páginas seguintes falha
+  // The track IDs go straight to a file: hundreds of Strings in RAM fragment
+  // the heap and the TLS handshake for the next pages fails
   const String tracksPath = String(PROFILE_DIR) + "/" + p.id + ".trk";
   File tracks = LittleFS.open(tracksPath, "w");
   if (!tracks) return BackendError::Api;
@@ -272,7 +272,7 @@ BackendError Profiles::build(Playlist& p, uint32_t& done, uint32_t toFetch,
   BackendError err = BackendError::None;
 
   while (true) {
-    // fev/2026: a faixa vem em "item"; "track" fica de fallback
+    // Feb/2026: the track comes in "item"; "track" is kept as a fallback
     const char* field = useTrackField_ ? "track" : "item";
     filter.clear();
     filter["next"] = true;
@@ -285,7 +285,7 @@ BackendError Profiles::build(Playlist& p, uint32_t& done, uint32_t toFetch,
 
     err = client_.call("GET", url, "", filter, doc, status);
     if (err == BackendError::Api && status == 400 && !useTrackField_) {
-      Serial.println("[perfis] a API recusou fields com 'item'; usando 'track'");
+      Serial.println("[profiles] the API rejected fields with 'item'; using 'track'");
       useTrackField_ = true;
       continue;
     }
@@ -304,15 +304,15 @@ BackendError Profiles::build(Playlist& p, uint32_t& done, uint32_t toFetch,
       }
       JsonObjectConst artist = track["artists"][0];
       const char* artistId = artist["id"];
-      if (artistId == nullptr || *artistId == '\0') continue;  // faixa local, episódio ou indisponível
+      if (artistId == nullptr || *artistId == '\0') continue;  // local track, episode or unavailable
       ArtistCount& a = counts[artistId];
       if (a.n++ == 0) a.name = cleanName(artist["name"] | "");
       ++total;
     }
 
-    // Se a API ignorar o campo pedido, as faixas voltam vazias: tenta o outro nome
+    // If the API ignores the requested field, the tracks come back empty: try the other name
     if (offset == 0 && items.size() > 0 && withField == 0 && !useTrackField_) {
-      Serial.println("[perfis] faixas sem 'item' na resposta; usando 'track'");
+      Serial.println("[profiles] tracks without 'item' in the response; using 'track'");
       useTrackField_ = true;
       continue;
     }
@@ -332,14 +332,14 @@ BackendError Profiles::build(Playlist& p, uint32_t& done, uint32_t toFetch,
       tracks.close();
     });
     if (!saved) {
-      Serial.printf("[perfis] falha ao salvar '%s'\n", p.name.c_str());
+      Serial.printf("[profiles] failed to save '%s'\n", p.name.c_str());
       err = BackendError::Api;
     }
   }
   LittleFS.remove(tracksPath);
   if (err != BackendError::None) return err;
 
-  Serial.printf("[perfis] '%s': %u faixas, %u artistas\n", p.name.c_str(), total,
+  Serial.printf("[profiles] '%s': %u tracks, %u artists\n", p.name.c_str(), total,
                 static_cast<unsigned>(counts.size()));
   return BackendError::None;
 }
@@ -361,7 +361,7 @@ void Profiles::removeStale() const {
 
   for (const String& path : stale) {
     LittleFS.remove(path);
-    Serial.printf("[perfis] removido %s\n", path.c_str());
+    Serial.printf("[profiles] removed %s\n", path.c_str());
   }
 }
 
@@ -380,7 +380,7 @@ BackendError Profiles::sync(bool force, const ProgressFn& progress) {
   BackendError err = fetchPlaylists(fresh);
   if (err != BackendError::None) return err;
 
-  // Só reconstrói o que mudou: o snapshot_id muda a cada alteração na playlist
+  // Only rebuilds what changed: the snapshot_id changes on every playlist edit
   std::vector<bool> rebuild(fresh.size(), false);
   uint32_t toFetch = 0;
   size_t toRebuild = 0;
@@ -394,11 +394,11 @@ BackendError Profiles::sync(bool force, const ProgressFn& progress) {
       ++toRebuild;
     }
   }
-  Serial.printf("[perfis] %u playlists, %u para reconstruir (%u faixas)\n",
+  Serial.printf("[profiles] %u playlists, %u to rebuild (%u tracks)\n",
                 static_cast<unsigned>(fresh.size()), static_cast<unsigned>(toRebuild), toFetch);
 
-  // Mantém o perfil antigo (se houver) de uma playlist que falhou; como o
-  // snapshot salvo continua o antigo, ela é reconstruída no próximo sync
+  // Keeps the old profile (if any) of a playlist that failed; since the saved
+  // snapshot is still the old one, it's rebuilt on the next sync
   std::vector<Playlist> kept;
   auto keepOld = [&](const Playlist& p) {
     Playlist cached;
@@ -416,7 +416,7 @@ BackendError Profiles::sync(bool force, const ProgressFn& progress) {
       kept.push_back(fresh[i]);
       continue;
     }
-    if (err != BackendError::None) {  // sync interrompido: só aproveita o que já existe
+    if (err != BackendError::None) {  // sync interrupted: only reuses what already exists
       keepOld(fresh[i]);
       continue;
     }
@@ -427,14 +427,14 @@ BackendError Profiles::sync(bool force, const ProgressFn& progress) {
       kept.push_back(fresh[i]);
       ++rebuilt;
     } else if (status == 403) {
-      Serial.printf("[perfis] sem acesso a '%s', ignorada\n", fresh[i].name.c_str());
+      Serial.printf("[profiles] no access to '%s', skipped\n", fresh[i].name.c_str());
     } else if (buildErr == BackendError::RateLimited || buildErr == BackendError::NoWifi ||
                buildErr == BackendError::AuthExpired) {
-      Serial.println("[perfis] sync interrompido");
+      Serial.println("[profiles] sync interrupted");
       err = buildErr;
       keepOld(fresh[i]);
     } else {
-      Serial.printf("[perfis] falha em '%s', mantendo o perfil anterior\n",
+      Serial.printf("[profiles] failed on '%s', keeping the previous profile\n",
                     fresh[i].name.c_str());
       keepOld(fresh[i]);
     }
@@ -444,7 +444,7 @@ BackendError Profiles::sync(bool force, const ProgressFn& progress) {
   playlists_ = std::move(kept);
   removeStale();
   progress(100);
-  Serial.printf("[perfis] %u playlists prontas, %u reconstruidas, em %.1fs\n",
+  Serial.printf("[profiles] %u playlists ready, %u rebuilt, in %.1fs\n",
                 static_cast<unsigned>(playlists_.size()), static_cast<unsigned>(rebuilt),
                 (millis() - start) / 1000.0f);
   return err;
@@ -478,7 +478,7 @@ void Profiles::recordAdd(const String& playlistId, const NowPlaying& track,
 
   Playlist p;
   Counts counts;
-  if (!load(playlistId, p, counts)) return;  // sem perfil: o próximo sync reconstrói
+  if (!load(playlistId, p, counts)) return;  // no profile: the next sync rebuilds it
 
   if (!track.artistId.isEmpty()) {
     ArtistCount& a = counts[track.artistId];
@@ -486,12 +486,12 @@ void Profiles::recordAdd(const String& playlistId, const NowPlaying& track,
     ++p.total;
   }
   p.name = entry->name;
-  // Sem snapshot novo, fica o antigo e o próximo sync reconstrói a playlist
+  // Without a new snapshot, the old one stays and the next sync rebuilds the playlist
   if (!snapshot.isEmpty()) p.snapshot = snapshot;
 
   File old = LittleFS.open(profilePath(playlistId), "r");
   if (!old) return;
-  // Fecha o perfil antigo antes que write() o substitua pelo novo
+  // Closes the old profile before write() replaces it with the new one
   const bool saved = write(p, counts, [&](File& f) {
     copyTrackLines(old, HEADER_LINES, f);
     old.close();
@@ -499,12 +499,12 @@ void Profiles::recordAdd(const String& playlistId, const NowPlaying& track,
     f.println(track.trackId);
   });
   if (!saved) {
-    Serial.printf("[perfis] falha ao atualizar '%s'\n", p.name.c_str());
+    Serial.printf("[profiles] failed to update '%s'\n", p.name.c_str());
     return;
   }
   entry->total = p.total;
   entry->snapshot = p.snapshot;
-  Serial.printf("[perfis] '%s' atualizada: %u faixas\n", p.name.c_str(), p.total);
+  Serial.printf("[profiles] '%s' updated: %u tracks\n", p.name.c_str(), p.total);
 }
 
 void Profiles::similarWeights(const std::vector<SimilarArtist>& similar,
@@ -515,7 +515,7 @@ void Profiles::similarWeights(const std::vector<SimilarArtist>& similar,
     uint16_t n;
   };
   std::vector<Hit> hits;
-  std::vector<uint16_t> df(similar.size(), 0);  // em quantas playlists cada artista aparece
+  std::vector<uint16_t> df(similar.size(), 0);  // how many playlists each artist appears in
   std::vector<uint16_t> counts;
 
   for (size_t i = 0; i < playlists_.size(); ++i) {
@@ -532,7 +532,7 @@ void Profiles::similarWeights(const std::vector<SimilarArtist>& similar,
     }
   }
 
-  // hits sai em ordem de playlist e, dentro dela, do artista mais parecido ao menos
+  // hits come out in playlist order and, within each, from the most to the least similar artist
   const float total = playlists_.size();
   std::vector<float> scores(playlists_.size(), 0.0f);
   for (const Hit& h : hits) {

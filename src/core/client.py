@@ -1,7 +1,7 @@
 """
-Cliente Spotify - Gerencia a comunicação com a API do Spotify.
+Spotify client - handles the communication with the Spotify API.
 
-Fornece métodos para autenticação, busca de músicas e gerenciamento de playlists.
+Provides methods for authentication, fetching songs and managing playlists.
 """
 
 import json
@@ -15,16 +15,16 @@ _GENRES_FLAG_FILE = Path(__file__).parent.parent.parent / '.pulse_genres_flag.js
 
 
 class SpotifyManager:
-    """Gerenciador centralizado para todas as operações com a API Spotify."""
+    """Central manager for every operation on the Spotify API."""
     
     def __init__(self, client_id: str, client_secret: str, redirect_uri: str):
         """
-        Inicializa o cliente Spotify com credenciais OAuth.
+        Initializes the Spotify client with OAuth credentials.
         
         Args:
-            client_id: ID do cliente Spotify
-            client_secret: Secret do cliente Spotify
-            redirect_uri: URI de redirecionamento após autenticação
+            client_id: Spotify client ID
+            client_secret: Spotify client secret
+            redirect_uri: Redirect URI after authentication
         """
         scopes = (
             "user-read-currently-playing "
@@ -53,10 +53,10 @@ class SpotifyManager:
 
     def get_current_user(self) -> Optional[Dict]:
         """
-        Obtém informações do usuário autenticado.
+        Gets the authenticated user's info.
         
         Returns:
-            Dict com 'display_name' e 'id', ou None se erro
+            Dict with 'display_name' and 'id', or None on error
         """
         try:
             user = self.sp.current_user()
@@ -65,48 +65,48 @@ class SpotifyManager:
                 'id': user.get('id')
             }
         except Exception as e:
-            print(f"Erro ao obter usuário: {e}")
+            print(f"Error getting the user: {e}")
             return None
 
     def get_current_track(self) -> Optional[Track]:
         """
-        Obtém a música tocando no momento.
+        Gets the song playing right now.
         
         Returns:
-            Objeto Track ou None se nada estiver tocando
+            Track, or None if nothing is playing
         """
         try:
             result = self.sp.current_user_playing_track()
             if result and result.get('is_playing') and result.get('item'):
                 item = result['item']
                 artists = item.get('artists', [])
-                artistas_ids = [a.get('id') for a in artists if a.get('id')]
-                artistas_names = [a.get('name') for a in artists if a.get('name')]
+                artist_ids = [a.get('id') for a in artists if a.get('id')]
+                artist_names = [a.get('name') for a in artists if a.get('name')]
                 first_artist = artists[0] if artists else {}
                 
                 return Track(
                     id=item.get('id'),
-                    nome=item.get('name'),
-                    artista=first_artist.get('name', 'Desconhecido'),
-                    id_artista=first_artist.get('id'),
-                    artistas=artistas_ids,  # [a1, a2]
-                    artistas_nomes=artistas_names,  # ["Nome1", "Nome2"]
+                    name=item.get('name'),
+                    artist=first_artist.get('name', 'Unknown'),
+                    artist_id=first_artist.get('id'),
+                    artist_ids=artist_ids,  # [a1, a2]
+                    artist_names=artist_names,  # ["Name1", "Name2"]
                 )
 
-            return None  # música não tocando
+            return None  # nothing playing
         except (spotipy.exceptions.SpotifyException, ConnectionError, TimeoutError):
-            raise  # relança erros graves para main.py tratar
+            raise  # re-raises serious errors for main.py to handle
         except Exception as e:
-            print(f"Erro inesperado ao obter música atual: {e}")
+            print(f"Unexpected error getting the current song: {e}")
             return None
 
     def get_user_playlists(self) -> List[Dict]:
         """
-        Obtém com paginação as playlists do usuário e as colaborativas que ele segue
-        (as mesmas que o firmware considera).
+        Gets, with pagination, the user's playlists and the collaborative ones they follow
+        (the same ones the firmware considers).
 
         Returns:
-            Lista de dicts com 'id', 'name' e 'snapshot_id'
+            List of dicts with 'id', 'name' and 'snapshot_id'
         """
         playlists = []
         try:
@@ -123,7 +123,7 @@ class SpotifyManager:
                         })
                 result = self.sp.next(result) if result.get('next') else None
         except Exception as e:
-            print(f"Erro ao obter playlists: {e}")
+            print(f"Error getting playlists: {e}")
         return playlists
 
     def _check_genres_available(self) -> bool:
@@ -132,7 +132,7 @@ class SpotifyManager:
                 data = json.loads(_GENRES_FLAG_FILE.read_text())
                 available = data.get('available', False)
                 if not available:
-                    print("Aviso: endpoint de gêneros indisponível (403). Matching apenas por artista.")
+                    print("Warning: genres endpoint unavailable (403). Matching by artist only.")
                 return available
             except Exception:
                 pass
@@ -145,7 +145,7 @@ class SpotifyManager:
             self.sp._get('artists', ids='0TnOYISbd1XYRBk9myaseg')
             available = True
         except Exception:
-            print("Aviso: endpoint de gêneros indisponível (403). Matching apenas por artista.")
+            print("Warning: genres endpoint unavailable (403). Matching by artist only.")
             available = False
         finally:
             spotipy_logger.setLevel(prev_level)
@@ -177,8 +177,8 @@ class SpotifyManager:
                     if artist:
                         result[artist['id']] = artist.get('genres', [])
             except Exception as e:
-                # Gênero é um sinal secundário: uma falha (ex.: 429) não derruba o matching
-                print(f"Aviso: falha ao buscar gêneros, seguindo sem eles ({e})")
+                # Genre is a secondary signal: a failure (e.g. 429) doesn't break the matching
+                print(f"Warning: failed to fetch genres, continuing without them ({e})")
                 break
             finally:
                 spotipy_logger.setLevel(prev_level)
@@ -195,10 +195,10 @@ class SpotifyManager:
 
     def add_track_to_playlist(self, playlist_id: str, track_id: str) -> Optional[str]:
         """
-        Adiciona uma música a uma playlist ou às Músicas Curtidas (id="liked").
+        Adds a song to a playlist or to Liked Songs (id="liked").
 
         Returns:
-            Novo snapshot_id da playlist, "liked" para curtidas, None se erro.
+            The playlist's new snapshot_id, "liked" for Liked Songs, None on error.
         """
         try:
             if playlist_id == "liked":
@@ -207,6 +207,6 @@ class SpotifyManager:
             result = self.sp.playlist_add_items(playlist_id, [track_id])
             return result.get('snapshot_id')
         except Exception as e:
-            print(f"Erro ao adicionar música: {e}")
+            print(f"Error adding the song: {e}")
             return None
 

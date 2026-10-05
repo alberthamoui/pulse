@@ -1,4 +1,4 @@
-"""Fluxo do main.py: confirmação antes de adicionar, cache e casos de borda."""
+"""main.py flow: confirmation before adding, cache and edge cases."""
 
 import json
 
@@ -12,8 +12,8 @@ PLAYLISTS = [{"id": "p1", "name": "P1", "snapshot_id": "s1"}]
 PROFILES = {
     "p1": {
         "id": "p1",
-        "nome": "P1",
-        "artista_weights": smoothed_weights({"a": 3, "b": 1}),
+        "name": "P1",
+        "artist_weights": smoothed_weights({"a": 3, "b": 1}),
         "genre_weights": {},
         "total_tracks": 4,
         "track_ids": ["t1", "t2", "t3", "t4"],
@@ -28,7 +28,7 @@ class FakeSpotifyManager:
     def __init__(self, **kwargs):
         self.api_calls = 0
         self.added = []
-        self.track = Track(id="new", nome="Song", artista="A", id_artista="a")
+        self.track = Track(id="new", name="Song", artist="A", artist_id="a")
         FakeSpotifyManager.instances.append(self)
 
     def get_current_track(self):
@@ -50,7 +50,7 @@ class FakeSpotifyManager:
 
 @pytest.fixture
 def pulse(monkeypatch, tmp_path):
-    """run_pulse com Spotify, config e perfis falsos; devolve o Spotify falso."""
+    """run_pulse with a fake Spotify, config and profiles; returns the fake Spotify."""
     FakeSpotifyManager.instances.clear()
     config = {"fallback_playlist_id": "fb", "cache_file": str(tmp_path / "cache.json")}
     monkeypatch.setattr(main, "load_config", lambda: dict(config))
@@ -77,9 +77,9 @@ def pulse(monkeypatch, tmp_path):
 def test_normal_mode_asks_before_adding_with_any_algorithm(pulse, algorithm):
     result, spotify, prompts = pulse(answer="n", algorithm=algorithm)
 
-    assert prompts, "o modo normal precisa perguntar antes de adicionar"
+    assert prompts, "normal mode must ask before adding"
     assert spotify.added == []
-    assert result["error"] == "Cancelado pelo usuario"
+    assert result["error"] == "Cancelled by user"
 
 
 def test_confirmed_choice_is_added_and_cached(pulse, tmp_path):
@@ -107,7 +107,7 @@ def test_auto_mode_adds_without_asking(pulse):
 
 def test_without_suggestions_enter_picks_the_fallback(pulse, monkeypatch):
     monkeypatch.setattr(FakeSpotifyManager, "get_current_track",
-                        lambda self: Track(id="new", nome="Song", artista="Z", id_artista="unknown"))
+                        lambda self: Track(id="new", name="Song", artist="Z", artist_id="unknown"))
     result, spotify, prompts = pulse(answer="")
 
     assert "Enter = f" in prompts[0]
@@ -116,24 +116,24 @@ def test_without_suggestions_enter_picks_the_fallback(pulse, monkeypatch):
 
 def test_local_file_is_rejected_before_anything_else(pulse, monkeypatch):
     monkeypatch.setattr(FakeSpotifyManager, "get_current_track",
-                        lambda self: Track(id=None, nome="demo.mp3", artista="Me"))
+                        lambda self: Track(id=None, name="demo.mp3", artist="Me"))
     result, spotify, prompts = pulse(answer="1")
 
     assert not result["success"]
-    assert "Arquivo local" in result["error"]
+    assert "Local file" in result["error"]
     assert spotify.added == [] and prompts == []
 
 
-def test_atualiza_cache_recomputes_weights_from_raw_counts():
+def test_update_cache_recomputes_weights_from_raw_counts():
     profiles = json.loads(json.dumps(PROFILES))
     snapshots = {"p1": "s1"}
 
-    main.atualiza_cache(profiles, snapshots, "p1", "s2", Track(id="t5", nome="x", id_artista="a"))
-    main.atualiza_cache(profiles, snapshots, "p1", "s3", Track(id="t6", nome="y", id_artista="c"))
+    main.update_cache(profiles, snapshots, "p1", "s2", Track(id="t5", name="x", artist_id="a"))
+    main.update_cache(profiles, snapshots, "p1", "s3", Track(id="t6", name="y", artist_id="c"))
 
     profile = profiles["p1"]
     assert profile["artist_counts"] == {"a": 4, "b": 1, "c": 1}
-    assert profile["artista_weights"] == pytest.approx(smoothed_weights({"a": 4, "b": 1, "c": 1}))
+    assert profile["artist_weights"] == pytest.approx(smoothed_weights({"a": 4, "b": 1, "c": 1}))
     assert profile["total_tracks"] == 6
     assert profile["track_ids"][-2:] == ["t5", "t6"]
     assert snapshots["p1"] == "s3"

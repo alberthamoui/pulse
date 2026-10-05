@@ -1,4 +1,4 @@
-"""Cliente do Last.fm: leitura da resposta e falhas com o motivo no log."""
+"""Last.fm client: response parsing and failures with the reason in the log."""
 
 import io
 import json
@@ -36,7 +36,7 @@ def test_parses_names_and_match_as_float(monkeypatch):
 
 def test_without_api_key_does_not_call_the_network(monkeypatch):
     def fail(*args, **kwargs):
-        raise AssertionError("não deveria chamar a rede")
+        raise AssertionError("should not call the network")
 
     monkeypatch.setattr(urllib.request, "urlopen", fail)
     assert get_similar_artists("Cody Fry", api_key="") == []

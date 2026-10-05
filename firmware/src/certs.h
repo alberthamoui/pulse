@@ -1,10 +1,10 @@
 #pragma once
 
-// Root CAs que validam os hosts do Spotify e do Last.fm (gerado a partir do
-// certifi). api.spotify.com usa a cadeia da DigiCert, accounts.spotify.com a da
-// Certainly/Starfield e ws.audioscrobbler.com a da Google Trust Services. Se um
-// deles trocar de CA, o HTTPS passa a falhar com erro de certificado e a lista
-// correspondente precisa ser atualizada.
+// Root CAs that validate the Spotify and Last.fm hosts (generated from certifi).
+// api.spotify.com uses the DigiCert chain, accounts.spotify.com the
+// Certainly/Starfield one and ws.audioscrobbler.com the Google Trust Services one.
+// If one of them changes CA, HTTPS starts failing with a certificate error and the
+// matching list has to be updated.
 
 static const char SPOTIFY_ROOT_CAS[] =
     // DigiCert Global Root G2

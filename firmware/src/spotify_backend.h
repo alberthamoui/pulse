@@ -5,7 +5,7 @@
 class Profiles;
 class SpotifyClient;
 
-// Backend real: música tocando, ranking pelos perfis e adicionar à playlist.
+// Real backend: current song, ranking from the profiles and adding to a playlist.
 class SpotifyBackend : public Backend {
  public:
   SpotifyBackend(SpotifyClient& client, Profiles& profiles)

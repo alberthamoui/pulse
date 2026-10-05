@@ -1,4 +1,4 @@
-"""Scoring do HybridMatcher: TF-IDF direto, co-ocorrência e fallback do Last.fm."""
+"""HybridMatcher scoring: direct TF-IDF, co-occurrence and the Last.fm fallback."""
 
 import math
 
@@ -12,7 +12,7 @@ from core.models import Track
 
 
 def track(artist_id, artist_name=""):
-    return Track(id="t", nome="song", artista=artist_name, id_artista=artist_id)
+    return Track(id="t", name="song", artist=artist_name, artist_id=artist_id)
 
 
 def trained(spotify, profiles, names=None):
@@ -37,10 +37,10 @@ def test_artist_in_every_playlist_does_not_discriminate(spotify):
         "p2": profile("p2", {"a": 1.0}),
     })
     assert matcher.idf["a"] == 0.0
-    # Sem sinal direto, só sobra a co-ocorrência com b, que está apenas em p1
+    # With no direct signal, only the co-occurrence with b is left, and b is only in p1
     [only] = matcher.top_matches(track("a"))
     assert only.playlist_id == "p1"
-    assert only.reason.startswith("co-ocorrência")
+    assert only.reason.startswith("co-occurrence")
 
 
 def test_direct_score_is_tf_times_idf(spotify):
@@ -51,13 +51,13 @@ def test_direct_score_is_tf_times_idf(spotify):
     [best] = matcher.top_matches(track("x"))
 
     assert best.playlist_id == "p1"
-    # x e y estão sempre juntos (Jaccard 1), então y soma o sinal indireto
+    # x and y are always together (Jaccard 1), so y adds the indirect signal
     expected = ALGO_ALPHA * (0.6 * math.log(2) + ALGO_BETA * 0.4 * math.log(2))
     assert best.score == pytest.approx(expected)
 
 
 def test_co_occurrence_ranks_playlist_without_the_artist(spotify):
-    # x só está em p1, junto com y; p2 não tem x, mas tem y
+    # x is only in p1, together with y; p2 doesn't have x, but has y
     matcher = trained(spotify, {
         "p1": profile("p1", {"x": 0.5, "y": 0.5}),
         "p2": profile("p2", {"y": 0.5, "w": 0.5}),
@@ -67,7 +67,7 @@ def test_co_occurrence_ranks_playlist_without_the_artist(spotify):
 
     assert set(ranked) == {"p1", "p2"}
     assert ranked["p1"].score > ranked["p2"].score
-    assert "co-ocorrência" in ranked["p2"].reason
+    assert "co-occurrence" in ranked["p2"].reason
 
 
 def test_top_matches_is_sorted_and_limited(spotify):
@@ -96,7 +96,7 @@ def test_lastfm_fallback_scores_playlists_through_similar_artists(spotify, monke
         names={"jvke": "JVKE", "ajr": "AJR", "other": "Other", "misc": "Misc"},
     )
     monkeypatch.setattr(core.lastfm_client, "get_similar_artists", lambda name, key: [
-        {"name": "jvke", "match": 0.9},  # casa pelo nome, sem diferenciar maiúsculas
+        {"name": "jvke", "match": 0.9},  # matched by name, case-insensitive
         {"name": "AJR", "match": 0.2},
         {"name": "Not In Library", "match": 1.0},
     ])
