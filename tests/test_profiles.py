@@ -1,4 +1,4 @@
-"""Perfis de playlist: tf com Laplace smoothing a partir das faixas da API."""
+"""Playlist profiles: tf with Laplace smoothing from the API tracks."""
 
 import pytest
 
@@ -24,7 +24,7 @@ class FakeManager:
 
 
 def test_tf_uses_laplace_smoothing():
-    # 3 faixas do artista a, 1 do b: V = 2 artistas distintos
+    # 3 tracks by artist a, 1 by b: V = 2 distinct artists
     pages = [{"total": 4, "next": None, "items": [
         item("t1", "a", "A"), item("t2", "a", "A"), item("t3", "a", "A"), item("t4", "b", "B"),
     ]}]
@@ -41,7 +41,7 @@ def test_tf_uses_laplace_smoothing():
 
 
 def test_smoothing_keeps_small_playlists_from_dominating():
-    # Sem smoothing, 1 de 3 faixas daria 0.33 numa playlist pequena
+    # Without smoothing, 1 of 3 tracks would give 0.33 in a small playlist
     pages = [{"total": 3, "next": None, "items": [
         item("t1", "a", "A"), item("t2", "b", "B"), item("t3", "c", "C"),
     ]}]
@@ -58,5 +58,5 @@ def test_reads_all_pages_and_skips_episodes():
     tracks, total = SpotifyPlaylistAnalyzer(FakeManager(pages)).fetch_tracks("p")
 
     assert total == 101
-    assert len(tracks) == 100  # o episódio fica de fora
-    assert tracks[-1].id_artista == "b"  # campo antigo "track" também é aceito
+    assert len(tracks) == 100  # the episode is left out
+    assert tracks[-1].artist_id == "b"  # the old "track" field is also accepted

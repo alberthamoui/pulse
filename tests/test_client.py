@@ -1,4 +1,4 @@
-"""SpotifyManager: filtro de playlists e gêneros, sem rede."""
+"""SpotifyManager: playlist filter and genres, without network."""
 
 from core.client import SpotifyManager
 
@@ -19,7 +19,7 @@ class FakeSp:
 
 
 def manager(sp, genres_available=True):
-    # Sem o __init__, que faria o login OAuth
+    # Skips __init__, which would do the OAuth login
     m = SpotifyManager.__new__(SpotifyManager)
     m.sp = sp
     m._genres_available = genres_available

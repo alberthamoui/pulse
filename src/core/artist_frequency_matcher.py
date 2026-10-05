@@ -1,9 +1,9 @@
 """
-Matcher baseado em Frequência Relativa de Artistas.
+Matcher based on the relative frequency of artists.
 
-Algoritmo base, mais simples que o HybridMatcher:
-- Cada playlist tem um perfil { id_artista: peso_relativo }
-- Uma música é alocada na playlist onde seu artista tem maior peso
+Baseline algorithm, simpler than the HybridMatcher:
+- Each playlist has a profile { artist_id: relative_weight }
+- A song goes to the playlist where its artist has the highest weight
 """
 
 from typing import Dict, Optional
@@ -13,51 +13,51 @@ from .matcher_base import Matcher
 
 class ArtistFrequencyMatcher(Matcher):
     """
-    Matcher que utiliza a frequência relativa de artistas em cada playlist.
+    Matcher that uses the relative frequency of artists in each playlist.
     
-    O algoritmo é simples e rápido: busca em qual playlist o artista
-    da música tocando tem o maior peso (frequência relativa).
+    The algorithm is simple and fast: it looks for the playlist where the artist
+    of the current song has the highest weight (relative frequency).
     """
     
     def __init__(self):
-        """Inicializa o matcher."""
+        """Initializes the matcher."""
         self.profiles: Dict[str, PlaylistProfile] = {}
     
     def train(self, profiles: Dict[str, PlaylistProfile]) -> None:
         """
-        Treina o matcher com os perfis de playlists.
+        Trains the matcher with the playlist profiles.
         
         Args:
-            profiles: Dict mapeando playlist_id → PlaylistProfile
+            profiles: Dict mapping playlist_id → PlaylistProfile
         """
         self.profiles = profiles
     
     def match(self, track: Track, **kwargs) -> Optional[MatchResult]:
         """
-        Encontra a melhor playlist baseado na frequência do artista.
+        Finds the best playlist based on the artist's frequency.
         
         Args:
-            track: Track com id_artista preenchido
-            **kwargs: Argumentos adicionais (não utilizados neste matcher)
+            track: Track with artist_id set
+            **kwargs: Extra arguments (not used by this matcher)
             
         Returns:
-            MatchResult com a melhor playlist, ou None se artista não encontrado
+            MatchResult with the best playlist, or None if the artist isn't found
         """
-        if not track.id_artista:
+        if not track.artist_id:
             return None
         
         best_playlist_id = None
         best_playlist_name = None
         best_score = 0.0
         
-        # Procura em qual playlist este artista tem maior peso
+        # Finds the playlist where this artist has the highest weight
         for playlist_id, profile in self.profiles.items():
-            artist_weight = profile.artista_weights.get(track.id_artista, 0.0)
+            artist_weight = profile.artist_weights.get(track.artist_id, 0.0)
             
             if artist_weight > best_score:
                 best_score = artist_weight
                 best_playlist_id = playlist_id
-                best_playlist_name = profile.nome
+                best_playlist_name = profile.name
         
         if best_playlist_id and best_score > 0:
             return MatchResult(
@@ -70,26 +70,26 @@ class ArtistFrequencyMatcher(Matcher):
         return None
     
     def get_name(self) -> str:
-        """Retorna nome do algoritmo."""
+        """Returns the algorithm's name."""
         return "Artist Frequency Matcher"
     
     def get_artist_stats(self, playlist_id: str) -> Dict[str, float]:
         """
-        Retorna estatísticas de artistas de uma playlist.
+        Returns the artist stats of a playlist.
         
         Args:
-            playlist_id: ID da playlist
+            playlist_id: Playlist ID
             
         Returns:
-            Dict com artistas ordenados por peso decrescente
+            Dict with the artists sorted by descending weight
         """
         if playlist_id not in self.profiles:
             return {}
         
         profile = self.profiles[playlist_id]
-        # Ordena artistas por peso (maior primeiro)
+        # Sorts the artists by weight (highest first)
         return dict(sorted(
-            profile.artista_weights.items(),
+            profile.artist_weights.items(),
             key=lambda x: x[1],
             reverse=True
         ))

@@ -1,7 +1,7 @@
 """
-PULSE Core - Módulo principal com classes e modelos centrais.
+PULSE Core - main module with the central classes and models.
 
-Exporta as principais classes para uso em outros módulos.
+Exports the main classes for use in other modules.
 """
 
 from .models import Track, PlaylistProfile, MatchResult

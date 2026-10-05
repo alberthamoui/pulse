@@ -1,7 +1,7 @@
 """
-Data models para o projeto PULSE.
+Data models for the PULSE project.
 
-Define as estruturas de dados utilizadas em toda a aplicação.
+Defines the data structures used across the application.
 """
 
 from dataclasses import dataclass, field
@@ -10,40 +10,40 @@ from typing import Optional, Dict, List
 
 @dataclass
 class Track:
-    """Representa uma faixa de música do Spotify."""
+    """A Spotify track."""
     id: str
-    nome: str
-    artista: str = ""
-    id_artista: Optional[str] = None
-    artistas: List[str] = field(default_factory=list)
-    artistas_nomes: List[str] = field(default_factory=list)
+    name: str
+    artist: str = ""
+    artist_id: Optional[str] = None
+    artist_ids: List[str] = field(default_factory=list)
+    artist_names: List[str] = field(default_factory=list)
 
     def __repr__(self) -> str:
-        return f"Track(nome={self.nome!r}, artista={self.artista!r})"
+        return f"Track(name={self.name!r}, artist={self.artist!r})"
 
 
 @dataclass
 class PlaylistProfile:
-    """Perfil de uma playlist baseado em análise de conteúdo."""
+    """Profile of a playlist built from its content."""
     id: str
-    nome: str
-    artista_weights: Dict[str, float]  # { id_artista: peso_relativo }
-    genre_weights: Dict[str, float] = field(default_factory=dict)  # { genre: peso_relativo }
+    name: str
+    artist_weights: Dict[str, float]  # { artist_id: relative_weight }
+    genre_weights: Dict[str, float] = field(default_factory=dict)  # { genre: relative_weight }
     total_tracks: int = 0
     track_ids: list = field(default_factory=list)
-    artist_counts: Dict[str, int] = field(default_factory=dict)  # { id_artista: faixas }
+    artist_counts: Dict[str, int] = field(default_factory=dict)  # { artist_id: tracks }
 
     def __repr__(self) -> str:
-        return f"PlaylistProfile(nome={self.nome!r}, artistas={len(self.artista_weights)}, genres={len(self.genre_weights)})"
+        return f"PlaylistProfile(name={self.name!r}, artists={len(self.artist_weights)}, genres={len(self.genre_weights)})"
 
 
 @dataclass
 class MatchResult:
-    """Resultado de uma operação de matching entre música e playlist."""
+    """Result of matching a song against the playlists."""
     playlist_id: str
     playlist_name: str
-    score: float  # 0.0 a 1.0
-    match_type: str  # 'artist_frequency', 'hybrid' ou 'lastfm'
+    score: float  # 0.0 to 1.0
+    match_type: str  # 'artist_frequency', 'hybrid' or 'lastfm'
     reason: str = ""
 
     def __repr__(self) -> str:

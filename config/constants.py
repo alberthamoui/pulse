@@ -1,11 +1,11 @@
-# -=-=-=-=-=-=-=-= Algoritmo de scoring -=-=-=-=-=-=-=-=  
-ALGO_ALPHA   = 0.8  # peso do sinal de artista vs gênero (0-1)
-ALGO_BETA    = 0.5  # peso do sinal indireto de co-ocorrência (0-1)
-LAPLACE_ALPHA = 1   # Laplace smoothing no cálculo de TF
+# -=-=-=-=-=-=-=-= Scoring algorithm -=-=-=-=-=-=-=-=  
+ALGO_ALPHA   = 0.8  # weight of the artist signal vs genre (0-1)
+ALGO_BETA    = 0.5  # weight of the indirect co-occurrence signal (0-1)
+LAPLACE_ALPHA = 1   # Laplace smoothing in the TF computation
 
 # -=-=-=-=-=-=-=-= Last.fm -=-=-=-=-=-=-=-=  
-LASTFM_SIMILAR_LIMIT = 50  # artistas similares buscados por chamada
-LASTFM_TIMEOUT       = 5   # segundos de timeout HTTP
+LASTFM_SIMILAR_LIMIT = 50  # similar artists fetched per call
+LASTFM_TIMEOUT       = 5   # HTTP timeout in seconds
 
 # -=-=-=-=-=-=-=-= Spotify API -=-=-=-=-=-=-=-=
-PLAYLIST_WORKERS = 5  # threads paralelas na análise de playlists
+PLAYLIST_WORKERS = 5  # parallel threads when analyzing playlists
