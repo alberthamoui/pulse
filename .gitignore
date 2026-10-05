@@ -1,6 +1,5 @@
-# Credentials and local config (constants.py and the .example files are versioned)
+# Credentials and local config (the .example files are versioned)
 config/*
-!config/constants.py
 !config/settings.example.py
 !config/config.example.json
 brag-output/
@@ -19,7 +18,6 @@ settings.json
 
 # Runtime files generated automatically
 .pulse_cache.json
-.pulse_genres_flag.json
 .cache
 src/.cache
 

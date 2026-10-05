@@ -1,23 +1,12 @@
 """
-PULSE Core - main module with the central classes and models.
+Pulse core: everything except the command line (main.py).
 
-Exports the main classes for use in other modules.
+    user_config        config/settings.py and config/config.json
+    client             Spotify API calls
+    playlist_analyzer  reads the playlists and builds their profiles
+    cache              keeps the profiles between runs
+    matcher            ranks the playlists for a song (+ Last.fm fallback)
+    lastfm_client      similar artists from Last.fm
+    models             Track, PlaylistProfile, MatchResult
+    constants          tuning knobs
 """
-
-from .models import Track, PlaylistProfile, MatchResult
-from .client import SpotifyManager
-from .playlist_analyzer import SpotifyPlaylistAnalyzer
-from .matcher_base import Matcher
-from .artist_frequency_matcher import ArtistFrequencyMatcher
-from .hybrid_matcher import HybridMatcher
-
-__all__ = [
-    'Track',
-    'PlaylistProfile',
-    'MatchResult',
-    'SpotifyManager',
-    'SpotifyPlaylistAnalyzer',
-    'Matcher',
-    'ArtistFrequencyMatcher',
-    'HybridMatcher',
-]
