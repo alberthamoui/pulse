@@ -383,6 +383,11 @@ def run_pulse(mode: str = 'normal') -> dict:
     try:
         track = spotify.get_current_track()
     except (spotipy.exceptions.SpotifyException, ConnectionError, TimeoutError) as e:
+        # A Spotify app in development mode only lets in the accounts registered on it
+        if getattr(e, 'http_status', None) == 403:
+            return {'success': False, 'error': "Spotify refused access (403). If this account doesn't own "
+                                               "the Spotify app, add it under User Management in the "
+                                               "developer dashboard (see Troubleshooting in the README)."}
         return {'success': False, 'error': f'Spotify/connection error: {e}'}
 
     if not track:

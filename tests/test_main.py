@@ -3,6 +3,7 @@
 import json
 
 import pytest
+import spotipy
 
 import main
 from core.models import Track
@@ -190,6 +191,18 @@ def test_placeholder_credentials_stop_before_connecting(monkeypatch):
         assert not result["success"]
         assert "config/settings.py" in result["error"]
     assert FakeSpotifyManager.instances == []
+
+
+def test_403_points_to_user_management(pulse, monkeypatch):
+    def forbidden(self):
+        raise spotipy.SpotifyException(403, -1, "Check settings on developer.spotify.com/dashboard, "
+                                                "the user may not be registered.")
+
+    monkeypatch.setattr(FakeSpotifyManager, "get_current_track", forbidden)
+    result, spotify, prompts = pulse()
+
+    assert "User Management" in result["error"]
+    assert spotify.added == [] and prompts == []
 
 
 def cached(snapshots, profiles):
