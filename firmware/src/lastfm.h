@@ -4,16 +4,16 @@
 
 #include <vector>
 
-// Artista parecido segundo o Last.fm, com a similaridade de 0 a 1.
+// Similar artist according to Last.fm, with the similarity from 0 to 1.
 struct SimilarArtist {
   String name;
   float match = 0.0f;
 };
 
-// true se há LASTFM_API_KEY no secrets.h.
+// true if secrets.h has a LASTFM_API_KEY.
 bool lastFmEnabled();
 
-// artist.getSimilar: até cfg::LASTFM_SIMILAR_LIMIT artistas parecidos com
-// artist, do mais para o menos parecido. Qualquer falha (sem rede, chave
-// inválida, artista desconhecido) só deixa out vazio: o Last.fm é um extra.
+// artist.getSimilar: up to cfg::LASTFM_SIMILAR_LIMIT artists similar to
+// artist, from most to least similar. Any failure (no network, invalid key,
+// unknown artist) just leaves out empty: Last.fm is an extra.
 bool fetchSimilarArtists(const String& artist, std::vector<SimilarArtist>& out);

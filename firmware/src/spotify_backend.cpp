@@ -28,18 +28,18 @@ BackendError SpotifyBackend::fetchNowPlaying(NowPlaying& out, const ProgressFn& 
   progress(70);
   if (err != BackendError::None) return err;
 
-  // 204: nada tocando. Sessão privada também não devolve a música.
+  // 204: nothing playing. A private session doesn't return the song either.
   JsonObjectConst track = doc["item"];
   if (status == 204 || track.isNull()) return BackendError::NothingPlaying;
 
-  // Podcast, audiobook e anúncio não são músicas
+  // Podcasts, audiobooks and ads aren't songs
   const char* type = doc["currently_playing_type"] | "track";
   if (strcmp(type, "track") != 0) return BackendError::NothingPlaying;
 
   out.name = track["name"] | "";
   out.artistName = track["artists"][0]["name"] | "";
   if (track["is_local"] | false) {
-    Serial.printf("[spotify] arquivo local: %s\n", out.name.c_str());
+    Serial.printf("[spotify] local file: %s\n", out.name.c_str());
     return BackendError::LocalFile;
   }
 
@@ -53,7 +53,7 @@ bool SpotifyBackend::rank(const NowPlaying& track, std::vector<Candidate>& out,
                           const ProgressFn& progress) {
   profiles_.weights(track, out);
 
-  // A fallback vira uma opção fixa, então sai da lista comum
+  // The fallback becomes a fixed option, so it leaves the regular list
   Candidate fallback;
   fallback.playlistId = secrets::FALLBACK_PLAYLIST_ID;
   fallback.name = "Fallback";
@@ -67,19 +67,19 @@ bool SpotifyBackend::rank(const NowPlaying& track, std::vector<Candidate>& out,
   }
 
   Candidate cancel;
-  cancel.name = "Cancelar";
+  cancel.name = "Cancel";
   cancel.kind = Candidate::Kind::Cancel;
 
   std::vector<Candidate> extras;
   if (!fallback.playlistId.isEmpty()) extras.push_back(fallback);
   extras.push_back(cancel);
 
-  // Artista em nenhuma playlist: as sugestões vêm dos artistas parecidos
+  // Artist in no playlist: the suggestions come from similar artists
   size_t maxCount = cfg::MAX_SUGGESTIONS;
   const bool direct = std::any_of(out.begin(), out.end(),
                                   [](const Candidate& c) { return c.weight > 0.0f; });
   if (!direct && lastFmEnabled()) {
-    Serial.printf("[lastfm] %s em nenhuma playlist, buscando artistas parecidos\n",
+    Serial.printf("[lastfm] %s is in no playlist, looking up similar artists\n",
                   track.artistName.c_str());
     progress(80);
     std::vector<SimilarArtist> similar;
@@ -90,8 +90,8 @@ bool SpotifyBackend::rank(const NowPlaying& track, std::vector<Candidate>& out,
     }
   }
 
-  // Com ranking, a melhor sugestão continua sendo a primeira. Sem match, a
-  // fallback é o destino mais provável, e Cancelar não fica no fim de uma lista longa.
+  // With a ranking, the best suggestion stays first. Without a match, the
+  // fallback is the most likely destination, and Cancel isn't left at the end of a long list.
   const bool matched = selectCandidates(out, maxCount);
   out.insert(matched ? out.end() : out.begin(), extras.begin(), extras.end());
   return matched;

@@ -41,7 +41,7 @@ void StateMachine::enterIdle() {
 void StateMachine::enterError(BackendError err) {
   line1_ = errorMessage(err);
   line2_ = errorDetail(err);
-  Serial.printf("[sm] erro: %s\n", line1_.c_str());
+  Serial.printf("[sm] error: %s\n", line1_.c_str());
   enter(State::Error);
 }
 
@@ -64,7 +64,7 @@ void StateMachine::tick() {
       } else if (ev == ButtonEvent::OkClick) {
         confirmSelection();
       } else if (now - lastInput_ >= cfg::SELECT_TIMEOUT_MS) {
-        Serial.println("[sm] timeout no SELECT, nada adicionado");
+        Serial.println("[sm] timeout on SELECT, nothing added");
         enterIdle();
       }
       break;
@@ -78,7 +78,7 @@ void StateMachine::tick() {
       break;
 
     case State::Loading:
-      break;  // só existe durante as chamadas bloqueantes
+      break;  // only exists during the blocking calls
   }
 
   render(millis());
@@ -86,7 +86,7 @@ void StateMachine::tick() {
 
 void StateMachine::loadNowPlaying() {
   enter(State::Loading);
-  auto progress = [this](uint8_t pct) { display_.progress("Carregando", pct); };
+  auto progress = [this](uint8_t pct) { display_.progress("Loading", pct); };
   progress(0);
 
   const BackendError err = backend_.fetchNowPlaying(track_, progress);
@@ -98,7 +98,7 @@ void StateMachine::loadNowPlaying() {
     if (candidates_.empty()) {
       enterError(BackendError::NoPlaylists);
     } else {
-      Serial.printf("[sm] tocando: %s - %s (%u playlists, %s)\n", track_.name.c_str(),
+      Serial.printf("[sm] playing: %s - %s (%u playlists, %s)\n", track_.name.c_str(),
                     track_.artistName.c_str(), static_cast<unsigned>(candidates_.size()),
                     manual_ ? "manual" : "ranking");
       selected_ = first_ = 0;
@@ -122,28 +122,28 @@ void StateMachine::moveSelection() {
 void StateMachine::confirmSelection() {
   const Candidate chosen = candidates_[selected_];
   if (chosen.kind == Candidate::Kind::Cancel) {
-    Serial.println("[sm] cancelado, nada adicionado");
+    Serial.println("[sm] cancelled, nothing added");
     enterIdle();
     return;
   }
   if (chosen.hasTrack) {
-    Serial.printf("[sm] ja esta em %s, nada adicionado\n", chosen.name.c_str());
-    line1_ = "Já está em";
+    Serial.printf("[sm] already in %s, nothing added\n", chosen.name.c_str());
+    line1_ = "Already in";
     line2_ = chosen.name;
     enter(State::Done);
     return;
   }
 
   enter(State::Loading);
-  auto progress = [this](uint8_t pct) { display_.progress("Adicionando", pct); };
+  auto progress = [this](uint8_t pct) { display_.progress("Adding", pct); };
   progress(0);
 
   const BackendError err = backend_.addTrack(track_, chosen, progress);
   if (err != BackendError::None) {
     enterError(err);
   } else {
-    Serial.printf("[sm] adicionado em %s\n", chosen.name.c_str());
-    line1_ = "Adicionado em";
+    Serial.printf("[sm] added to %s\n", chosen.name.c_str());
+    line1_ = "Added to";
     line2_ = chosen.name;
     enter(State::Done);
   }
@@ -151,9 +151,9 @@ void StateMachine::confirmSelection() {
 }
 
 void StateMachine::resync() {
-  Serial.println("[sm] ressincronizando todas as playlists");
+  Serial.println("[sm] resyncing every playlist");
   enter(State::Loading);
-  auto progress = [this](uint8_t pct) { display_.progress("Sincronizando", pct); };
+  auto progress = [this](uint8_t pct) { display_.progress("Syncing", pct); };
   progress(0);
 
   const BackendError err = backend_.resyncAll(progress);
@@ -161,7 +161,7 @@ void StateMachine::resync() {
     enterError(err);
   } else {
     line1_ = "Playlists";
-    line2_ = "sincronizadas";
+    line2_ = "synced";
     enter(State::Done);
   }
   buttons_.suppressUntilRelease();
@@ -184,7 +184,7 @@ void StateMachine::render(uint32_t now) {
       animating_ = display_.message(line1_.c_str(), line2_.c_str(), now - scrollStart_);
       break;
     case State::Loading:
-      break;  // a barra de progresso é desenhada pelas próprias operações
+      break;  // the progress bar is drawn by the operations themselves
   }
   dirty_ = false;
   lastFrame_ = now;
