@@ -7,7 +7,9 @@
 
 **Hear a song you like, press a button, and Pulse finds the playlist where it belongs.**
 
-![Pulse on a breadboard: ESP32, two buttons and the OLED showing PULSE](docs/device.jpeg)
+[![Watch the 21-second demo: the Pulse device on a breadboard](docs/demo.jpg)](docs/demo.mp4)
+
+▶ [Watch the 21-second demo](docs/demo.mp4). It's an animation: the device screens are drawn with the firmware's own fonts and layout, the terminal shows the CLI's real output format, and the playlists are examples.
 
 I have around 50 playlists. Every time something good came on, I had to stop, remember what each playlist was about and decide where the song went.
 
@@ -22,6 +24,8 @@ Pulse does that thinking for me. It looks at the song playing on Spotify, compar
 - **Same idea, two very different machines.** The Python version has the full ranking. The firmware does the whole thing in C++ on a microcontroller with a few hundred kilobytes of RAM: HTTPS, OAuth token refresh, pagination over thousands of tracks and the ranking, from flash.
 
 ## The device
+
+![Pulse on a breadboard: ESP32, two buttons and the OLED showing PULSE](docs/device.jpeg)
 
 An ESP32 DevKit, a 1.3" OLED and two buttons on a breadboard. Press a button while anything plays on Spotify, on any device. The screen shows the song, the artist and up to 5 playlists, with the share of that artist in each one and a mark on the playlists that already have the song. Scroll with one button, confirm with the other.
 
