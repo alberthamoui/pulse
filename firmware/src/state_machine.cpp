@@ -1,5 +1,7 @@
 #include "state_machine.h"
 
+#include <algorithm>
+
 #include "config.h"
 
 namespace {
@@ -95,7 +97,12 @@ void StateMachine::loadNowPlaying() {
   } else {
     manual_ = !backend_.rank(track_, candidates_, progress);
     progress(100);
-    if (candidates_.empty()) {
+    // Cancel is always in the list: with nothing else (no playlist synced and no
+    // fallback), there's nowhere to add the song
+    const bool nowhere = std::all_of(candidates_.begin(), candidates_.end(), [](const Candidate& c) {
+      return c.kind == Candidate::Kind::Cancel;
+    });
+    if (nowhere) {
       enterError(BackendError::NoPlaylists);
     } else {
       Serial.printf("[sm] playing: %s - %s (%u playlists, %s)\n", track_.name.c_str(),
