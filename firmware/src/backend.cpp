@@ -5,27 +5,27 @@ const char* errorMessage(BackendError err) {
     case BackendError::None:
       return "";
     case BackendError::NoWifi:
-      return "Sem Wi-Fi";
+      return "No Wi-Fi";
     case BackendError::NothingPlaying:
-      return "Nada tocando";
+      return "Nothing playing";
     case BackendError::LocalFile:
-      return "Arquivo local";
+      return "Local file";
     case BackendError::NoPlaylists:
-      return "Sem playlists";
+      return "No playlists";
     case BackendError::RateLimited:
-      return "API ocupada";
+      return "API busy";
     case BackendError::AuthExpired:
-      return "Reautorize";
+      return "Reauthorize";
     case BackendError::Api:
       break;
   }
-  return "Erro na API";
+  return "API error";
 }
 
 const char* errorDetail(BackendError err) {
   switch (err) {
     case BackendError::LocalFile:
-      return "fora do catálogo";
+      return "not in catalog";
     case BackendError::AuthExpired:
       return "get_refresh_token.py";
     default:

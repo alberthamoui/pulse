@@ -1,110 +1,71 @@
-"""
-Cliente Spotify - Gerencia a comunicação com a API do Spotify.
+"""Spotify client: login, the current song, the user's playlists and adding a song."""
 
-Fornece métodos para autenticação, busca de músicas e gerenciamento de playlists.
-"""
+from typing import Dict, List, Optional
 
-import json
 import spotipy
-from pathlib import Path
 from spotipy.oauth2 import SpotifyOAuth
-from typing import List, Dict, Optional
+
 from .models import Track
 
-_GENRES_FLAG_FILE = Path(__file__).parent.parent.parent / '.pulse_genres_flag.json'
+SCOPES = (
+    "user-read-currently-playing "
+    "playlist-modify-private "
+    "playlist-modify-public "
+    "playlist-read-private "
+    "playlist-read-collaborative "
+    "user-library-read "
+    "user-library-modify"
+)
 
 
 class SpotifyManager:
-    """Gerenciador centralizado para todas as operações com a API Spotify."""
-    
+    """Every call Pulse makes to the Spotify API goes through here."""
+
     def __init__(self, client_id: str, client_secret: str, redirect_uri: str):
-        """
-        Inicializa o cliente Spotify com credenciais OAuth.
-        
-        Args:
-            client_id: ID do cliente Spotify
-            client_secret: Secret do cliente Spotify
-            redirect_uri: URI de redirecionamento após autenticação
-        """
-        scopes = (
-            "user-read-currently-playing "
-            "playlist-modify-private "
-            "playlist-modify-public "
-            "playlist-read-private "
-            "user-library-read "
-            "user-library-modify"
-        )
-        
+        # The first run opens the browser to log in; spotipy keeps the token in .cache
         self.sp = spotipy.Spotify(auth_manager=SpotifyOAuth(
             client_id=client_id,
             client_secret=client_secret,
             redirect_uri=redirect_uri,
-            scope=scopes
+            scope=SCOPES,
         ))
+
+        # Counts every API call, to show at the end of a run
         self.api_calls = 0
-        _orig = self.sp._internal_call
-        def _counting_call(*args, **kwargs):
+        original_call = self.sp._internal_call
+
+        def counting_call(*args, **kwargs):
             self.api_calls += 1
-            return _orig(*args, **kwargs)
-        self.sp._internal_call = _counting_call
+            return original_call(*args, **kwargs)
 
-        self._genres_available = self._check_genres_available()
-
-    def get_current_user(self) -> Optional[Dict]:
-        """
-        Obtém informações do usuário autenticado.
-        
-        Returns:
-            Dict com 'display_name' e 'id', ou None se erro
-        """
-        try:
-            user = self.sp.current_user()
-            return {
-                'display_name': user.get('display_name'),
-                'id': user.get('id')
-            }
-        except Exception as e:
-            print(f"Erro ao obter usuário: {e}")
-            return None
+        self.sp._internal_call = counting_call
 
     def get_current_track(self) -> Optional[Track]:
         """
-        Obtém a música tocando no momento.
-        
-        Returns:
-            Objeto Track ou None se nada estiver tocando
-        """
-        try:
-            result = self.sp.current_user_playing_track()
-            if result and result.get('is_playing') and result.get('item'):
-                item = result['item']
-                artists = item.get('artists', [])
-                artistas_ids = [a.get('id') for a in artists if a.get('id')]
-                artistas_names = [a.get('name') for a in artists if a.get('name')]
-                first_artist = artists[0] if artists else {}
-                
-                return Track(
-                    id=item.get('id'),
-                    nome=item.get('name'),
-                    artista=first_artist.get('name', 'Desconhecido'),
-                    id_artista=first_artist.get('id'),
-                    artistas=artistas_ids,  # [a1, a2]
-                    artistas_nomes=artistas_names,  # ["Nome1", "Nome2"]
-                )
+        The current song, playing or paused (like the firmware: pausing to decide
+        where it goes is the natural way to use Pulse). None if there's no song:
+        no session, a podcast or an ad.
 
-            return None  # música não tocando
-        except (spotipy.exceptions.SpotifyException, ConnectionError, TimeoutError) as e:
-            raise  # relança erros graves para main.py tratar
-        except Exception as e:
-            print(f"Erro inesperado ao obter música atual: {e}")
+        Spotify and connection errors are raised for main.py to handle.
+        """
+        result = self.sp.current_user_playing_track()
+        is_song = result and result.get('currently_playing_type', 'track') == 'track'
+        if not (is_song and result.get('item')):
             return None
+
+        item = result['item']
+        first_artist = (item.get('artists') or [{}])[0]
+        return Track(
+            id=item.get('id'),
+            name=item.get('name'),
+            artist=first_artist.get('name', 'Unknown'),
+            artist_id=first_artist.get('id'),
+        )
 
     def get_user_playlists(self) -> List[Dict]:
         """
-        Obtém todas as playlists do usuário com paginação.
-
-        Returns:
-            Lista de dicts com 'id', 'name' e 'snapshot_id'
+        The user's own playlists and the collaborative ones they follow (the same
+        ones the firmware considers), as dicts with 'id', 'name' and 'snapshot_id'.
         """
         playlists = []
         try:
@@ -112,7 +73,8 @@ class SpotifyManager:
             result = self.sp.current_user_playlists(limit=50)
             while result:
                 for p in result.get('items', []):
-                    if p.get('owner', {}).get('id') == user_id:
+                    mine = p.get('owner', {}).get('id') == user_id
+                    if mine or p.get('collaborative'):
                         playlists.append({
                             'id': p['id'],
                             'name': p['name'],
@@ -120,68 +82,8 @@ class SpotifyManager:
                         })
                 result = self.sp.next(result) if result.get('next') else None
         except Exception as e:
-            print(f"Erro ao obter playlists: {e}")
+            print(f"Error getting playlists: {e}")
         return playlists
-
-    def _check_genres_available(self) -> bool:
-        if _GENRES_FLAG_FILE.exists():
-            try:
-                data = json.loads(_GENRES_FLAG_FILE.read_text())
-                available = data.get('available', False)
-                if not available:
-                    print("Aviso: endpoint de gêneros indisponível (403). Matching apenas por artista.")
-                return available
-            except Exception:
-                pass
-
-        import logging
-        spotipy_logger = logging.getLogger('spotipy.client')
-        prev_level = spotipy_logger.level
-        spotipy_logger.setLevel(logging.CRITICAL)
-        try:
-            self.sp._get('artists', ids='0TnOYISbd1XYRBk9myaseg')
-            available = True
-        except Exception:
-            print("Aviso: endpoint de gêneros indisponível (403). Matching apenas por artista.")
-            available = False
-        finally:
-            spotipy_logger.setLevel(prev_level)
-
-        try:
-            _GENRES_FLAG_FILE.write_text(json.dumps({'available': available}))
-        except Exception:
-            pass
-        return available
-
-    def get_artists_genres(self, artist_ids: List[str]) -> Dict[str, List[str]]:
-        """
-        Fetches genres for a list of artist IDs, batching 50 at a time.
-        Returns empty dicts silently if the endpoint is unavailable.
-        """
-        if not self._genres_available:
-            return {aid: [] for aid in artist_ids}
-
-        import logging
-        spotipy_logger = logging.getLogger('spotipy.client')
-        result: Dict[str, List[str]] = {}
-        for i in range(0, len(artist_ids), 50):
-            batch = artist_ids[i:i + 50]
-            prev_level = spotipy_logger.level
-            spotipy_logger.setLevel(logging.CRITICAL)
-            try:
-                response = self.sp._get('artists', ids=','.join(batch))
-                for artist in response.get('artists') or []:
-                    if artist:
-                        result[artist['id']] = artist.get('genres', [])
-            except Exception as e:
-                # Erro inesperado - logar e relançar
-                logging.error(f"Erro inesperado ao buscar gêneros: {e}")
-                raise
-            finally:
-                spotipy_logger.setLevel(prev_level)
-        return result
-
-
 
     def is_track_liked(self, track_id: str) -> bool:
         try:
@@ -192,10 +94,9 @@ class SpotifyManager:
 
     def add_track_to_playlist(self, playlist_id: str, track_id: str) -> Optional[str]:
         """
-        Adiciona uma música a uma playlist ou às Músicas Curtidas (id="liked").
+        Adds a song to a playlist or to Liked Songs (playlist_id="liked").
 
-        Returns:
-            Novo snapshot_id da playlist, "liked" para curtidas, None se erro.
+        Returns the playlist's new snapshot_id, "liked" for Liked Songs, or None on error.
         """
         try:
             if playlist_id == "liked":
@@ -204,6 +105,5 @@ class SpotifyManager:
             result = self.sp.playlist_add_items(playlist_id, [track_id])
             return result.get('snapshot_id')
         except Exception as e:
-            print(f"Erro ao adicionar música: {e}")
+            print(f"Error adding the song: {e}")
             return None
-

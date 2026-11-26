@@ -1,8 +1,8 @@
-// Teste da montagem, independente do resto do firmware (env hwtest).
-// - Cada botão acende o LED azul da placa (GPIO2) enquanto estiver apertado e
-//   aparece no Serial. O LED da placa não depende da montagem.
-// - A cada 2 s, até achar o display, confere as linhas do I2C e procura
-//   dispositivos. Dá para mexer nos fios e ver o resultado sem reiniciar.
+// Wiring test, independent from the rest of the firmware (env hwtest).
+// - Each button lights the board's blue LED (GPIO2) while it's pressed and
+//   shows up on Serial. The board LED doesn't depend on the wiring.
+// - Every 2 s, until the display is found, checks the I2C lines and scans for
+//   devices. You can move the wires around and see the result without rebooting.
 
 #include <Arduino.h>
 #include <Wire.h>
@@ -14,11 +14,11 @@ namespace {
 constexpr uint8_t PIN_ONBOARD_LED = 2;
 constexpr uint32_t PROBE_INTERVAL_MS = 2000;
 
-// Lê a linha com o pull-up e depois com o pull-down interno. Devolve nullptr se
-// ela está ok ou a descrição do problema.
-// - baixo com pull-up: a linha está em curto com o GND.
-// - baixo com pull-down: não há pull-up externo, ou seja, o display não está
-//   alimentado ou não está ligado nessa linha (os módulos trazem os pull-ups).
+// Reads the line with the internal pull-up and then with the pull-down. Returns
+// nullptr if it's fine, or a description of the problem.
+// - low with pull-up: the line is shorted to GND.
+// - low with pull-down: there's no external pull-up, so the display isn't
+//   powered or isn't connected to this line (the modules carry the pull-ups).
 const char* lineProblem(uint8_t pin) {
   pinMode(pin, INPUT_PULLUP);
   delay(5);
@@ -28,12 +28,12 @@ const char* lineProblem(uint8_t pin) {
   const bool externalPullUp = digitalRead(pin) == HIGH;
   pinMode(pin, INPUT);
 
-  if (!highWithPullUp) return "presa em baixo (curto com o GND?)";
-  if (!externalPullUp) return "sem pull-up (display sem alimentacao ou fora dessa linha)";
+  if (!highWithPullUp) return "stuck low (shorted to GND?)";
+  if (!externalPullUp) return "no pull-up (display not powered or not on this line)";
   return nullptr;
 }
 
-// Devolve uma linha descrevendo o estado do display.
+// Returns a line describing the display's state.
 String probeI2C(bool& found) {
   found = false;
   const char* sda = lineProblem(cfg::PIN_SDA);
@@ -46,16 +46,16 @@ String probeI2C(bool& found) {
   }
 
   Wire.begin(cfg::PIN_SDA, cfg::PIN_SCL, 100000);
-  String status = "[i2c] linhas ok, mas nenhum dispositivo respondeu";
+  String status = "[i2c] lines ok, but no device answered";
   for (uint8_t addr = 1; addr < 127; ++addr) {
     Wire.beginTransmission(addr);
     const uint8_t err = Wire.endTransmission();
     if (err == 5) {
-      status = "[i2c] timeout no barramento: confira as ligacoes do display";
+      status = "[i2c] bus timeout: check the display wiring";
       break;
     }
     if (err == 0) {
-      status = String("[i2c] dispositivo em 0x") + String(addr, HEX) +
+      status = String("[i2c] device at 0x") + String(addr, HEX) +
                (addr == 0x3C || addr == 0x3D ? " (display ok)" : "");
       found = true;
       break;
@@ -68,7 +68,7 @@ String probeI2C(bool& found) {
 void report(const char* name, bool pressed, bool& last) {
   if (pressed == last) return;
   last = pressed;
-  Serial.printf("[botao] %s %s\n", name, pressed ? "apertado" : "solto");
+  Serial.printf("[button] %s %s\n", name, pressed ? "pressed" : "released");
 }
 
 }  // namespace
@@ -77,13 +77,13 @@ void setup() {
   Serial.begin(115200);
   delay(200);
   Serial.println();
-  Serial.println("[teste] montagem do Pulse");
+  Serial.println("[test] Pulse wiring");
 
   pinMode(PIN_ONBOARD_LED, OUTPUT);
   pinMode(cfg::PIN_BTN_NAV, INPUT_PULLUP);
   pinMode(cfg::PIN_BTN_OK, INPUT_PULLUP);
 
-  Serial.println("[teste] aperte os botoes: o LED azul da placa acende enquanto um deles estiver apertado");
+  Serial.println("[test] press the buttons: the board's blue LED lights up while one of them is pressed");
 }
 
 void loop() {
@@ -97,8 +97,8 @@ void loop() {
   const bool ok = digitalRead(cfg::PIN_BTN_OK) == LOW;
 
   digitalWrite(PIN_ONBOARD_LED, nav || ok ? HIGH : LOW);
-  report("Navegar", nav, lastNav);
-  report("Confirmar", ok, lastOk);
+  report("Navigate", nav, lastNav);
+  report("Confirm", ok, lastOk);
 
   if (!displayFound && (lastProbe == 0 || millis() - lastProbe >= PROBE_INTERVAL_MS)) {
     lastProbe = millis();
@@ -109,5 +109,5 @@ void loop() {
     }
   }
 
-  delay(20);  // debounce simples, suficiente para o teste
+  delay(20);  // simple debounce, enough for the test
 }

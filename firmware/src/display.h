@@ -15,18 +15,18 @@ class Display {
   void idle();
   void progress(const char* label, uint8_t pct);
 
-  // Tela de escolha. elapsedMs conta desde a última mudança de seleção e
-  // controla o scroll dos nomes longos. Devolve true se algum texto está
-  // rolando, ou seja, se a tela precisa ser redesenhada periodicamente.
+  // Choice screen. elapsedMs counts from the last selection change and drives
+  // the scrolling of long names. Returns true if some text is scrolling, that
+  // is, if the screen needs to be redrawn periodically.
   bool select(const NowPlaying& track, const std::vector<Candidate>& items, bool manual,
               size_t selected, size_t first, uint32_t elapsedMs);
 
-  // Mensagem centralizada em até duas linhas (a segunda rola se não couber).
+  // Centered message in up to two lines (the second one scrolls if it doesn't fit).
   bool message(const char* line1, const char* line2, uint32_t elapsedMs);
 
  private:
-  // Desenha text na faixa [x, x + w) com a baseline em y. Se não couber, corta
-  // na faixa [top, bottom) e, com scroll = true, rola de acordo com elapsedMs.
+  // Draws text in the band [x, x + w) with the baseline at y. If it doesn't fit,
+  // clips to [top, bottom) and, with scroll = true, scrolls based on elapsedMs.
   bool drawClipped(int x, int y, int w, int top, int bottom, const char* text, bool scroll,
                    uint32_t elapsedMs);
 

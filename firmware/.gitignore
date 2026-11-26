@@ -1,5 +1,5 @@
 .pio/
 .vscode/
 
-# Credenciais (o secrets.example.h é versionado)
+# Credentials (secrets.example.h is versioned)
 include/secrets.h

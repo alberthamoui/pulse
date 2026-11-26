@@ -1,24 +1,26 @@
 """
-Gera o refresh token do Spotify para o firmware do Pulse (firmware/include/secrets.h).
+Generates the Spotify refresh token for the Pulse firmware (firmware/include/secrets.h).
 
-Antes de rodar, cadastre http://127.0.0.1:8888/callback em "Redirect URIs" no app do
-Spotify Developer Dashboard. O Spotify só aceita redirect HTTP em endereço de loopback.
+Uses the Authorization Code with PKCE flow: only the client id is needed, and the device
+refreshes the token without storing the client secret.
 
-O client id e o secret vêm, nesta ordem, de SPOTIPY_CLIENT_ID/SPOTIPY_CLIENT_SECRET,
-de config/settings.py (o mesmo do Pulse em Python) ou são pedidos no terminal.
+Before running it, add http://127.0.0.1:8888/callback to "Redirect URIs" in the app on the
+Spotify Developer Dashboard. Spotify only accepts HTTP redirects on a loopback address.
 
-Uso:
+The client id comes, in this order, from SPOTIPY_CLIENT_ID, from config/settings.py (the
+same one used by the Python version of Pulse) or is asked in the terminal.
+
+Usage:
     python tools/get_refresh_token.py
 """
 
-import getpass
 import os
+import secrets
 import sys
-import warnings
 from pathlib import Path
 
 from spotipy.cache_handler import MemoryCacheHandler
-from spotipy.oauth2 import SpotifyOAuth
+from spotipy.oauth2 import SpotifyPKCE
 
 REDIRECT_URI = "http://127.0.0.1:8888/callback"
 SCOPES = (
@@ -30,56 +32,54 @@ SCOPES = (
 )
 
 
-def load_credentials() -> tuple[str, str]:
+def load_client_id() -> str:
     client_id = os.environ.get("SPOTIPY_CLIENT_ID", "")
-    client_secret = os.environ.get("SPOTIPY_CLIENT_SECRET", "")
 
-    if not (client_id and client_secret):
+    if not client_id:
         sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
         try:
             from config import settings
 
-            client_id = client_id or getattr(settings, "SPOTIFY_CLIENT_ID", "")
-            client_secret = client_secret or getattr(settings, "SPOTIFY_CLIENT_SECRET", "")
-            if client_id and client_secret:
-                print("Usando o client id e o secret de config/settings.py")
+            client_id = getattr(settings, "SPOTIFY_CLIENT_ID", "")
+            if client_id == "your_client_id":  # settings.example.py placeholder: ask instead
+                client_id = ""
+            if client_id:
+                print("Using the client id from config/settings.py")
         except ImportError:
             pass
 
-    client_id = client_id or input("Client ID: ").strip()
-    client_secret = client_secret or getpass.getpass("Client secret: ").strip()
-    return client_id, client_secret
+    return client_id or input("Client ID: ").strip()
 
 
 def main() -> None:
-    client_id, client_secret = load_credentials()
+    client_id = load_client_id()
+    if not client_id:
+        sys.exit("No client ID: fill in SPOTIFY_CLIENT_ID in config/settings.py or set SPOTIPY_CLIENT_ID.")
 
-    # Sem cache em disco: o token só aparece no terminal.
-    auth = SpotifyOAuth(
+    # No cache on disk: the token only shows up in the terminal. The random state is
+    # checked in the callback and protects against CSRF.
+    auth = SpotifyPKCE(
         client_id=client_id,
-        client_secret=client_secret,
         redirect_uri=REDIRECT_URI,
         scope=SCOPES,
+        state=secrets.token_urlsafe(16),
         cache_handler=MemoryCacheHandler(),
         open_browser=True,
-        show_dialog=True,
     )
 
-    print("Abrindo o navegador para autorizar o Pulse...")
-    code = auth.get_auth_response()
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore", DeprecationWarning)  # as_dict está obsoleto no spotipy
-        token = auth.get_access_token(code, as_dict=True, check_cache=False)
+    print("Opening the browser to authorize Pulse...")
+    auth.get_access_token(check_cache=False)
+    token = auth.cache_handler.get_cached_token() or {}
 
     refresh_token = token.get("refresh_token")
     if not refresh_token:
-        sys.exit("O Spotify não devolveu um refresh token.")
+        sys.exit("Spotify did not return a refresh token.")
 
     missing = set(SCOPES.split()) - set(token.get("scope", "").split())
     if missing:
-        print(f"\nAviso: escopos não concedidos: {', '.join(sorted(missing))}")
+        print(f"\nWarning: scopes not granted: {', '.join(sorted(missing))}")
 
-    print("\nCole em firmware/include/secrets.h:\n")
+    print("\nPaste into firmware/include/secrets.h:\n")
     print(f'constexpr char SPOTIFY_REFRESH_TOKEN[] = "{refresh_token}";')
 
 

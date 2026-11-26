@@ -1,441 +1,210 @@
 """
-PULSE - Pega a musica tocando no Spotify e adiciona na playlist mais compativel.
-Se nao houver match, adiciona na playlist de fallback (FALLBACK_PULSE).
+PULSE - Takes the song playing on Spotify and adds it to the playlist it fits best.
+If there's no match, it goes to the fallback playlist (FALLBACK_PULSE).
 
-Uso:
-    python main.py                 # usa cache se disponivel
-    python main.py --auto          # modo automático (sem prompts)
-    python main.py --dry-run       # executa o matching mas nao adiciona na playlist
-    python main.py --refresh       # forca reanálise das playlists
-    python main.py --cache-refresh # reconstrói o cache sem verificar música tocando
-
+Usage:
+    python main.py                 # shows the suggestions and asks where to add
+    python main.py --auto          # adds to the best match if it passes the minimum score
+    python main.py --dry-run       # only shows the ranking
+    python main.py --refresh       # reads every playlist again before running
+    python main.py --cache-refresh # only rebuilds the cache, without looking at the current song
 """
 
 import sys
 from pathlib import Path
 ROOT = Path(__file__).parent
-sys.path.insert(0, str(ROOT / 'src'))
-sys.path.insert(0, str(ROOT))
-import json
+sys.path.insert(0, str(ROOT / 'src'))  # the core package
+sys.path.insert(0, str(ROOT))          # config/settings.py
 import time
-from datetime import datetime, timezone
 import spotipy
-from core import SpotifyManager, SpotifyPlaylistAnalyzer, ArtistFrequencyMatcher, HybridMatcher
-from core.models import PlaylistProfile
-from config.settings import SPOTIFY_CLIENT_ID, SPOTIFY_CLIENT_SECRET, SPOTIFY_REDIRECT_URI, LASTFM_API_KEY
-
-DEFAULT_AUTO_ADD_MIN_SCORE = 0.5  # usado se 'auto_add_min_score' nao estiver no config.json
-
-
-def load_config() -> dict:
-    config_path = ROOT / 'config' / 'config.json'
-    try:
-        with open(config_path, 'r', encoding='utf-8') as f:
-            return json.load(f)
-    except FileNotFoundError:
-        raise RuntimeError(f"config.json nao encontrado em {config_path}")
-    except json.JSONDecodeError:
-        raise RuntimeError("config.json invalido")
+from core.cache import Cache, load_cache, save_cache, sync_profiles
+from core.client import SpotifyManager
+from core.matcher import PlaylistMatcher
+from core.models import Track
+from core.user_config import INVALID_FALLBACK, SetupError, Settings, load_config, load_settings
 
 
-def load_cache(cache_path: Path, algorithm: str) -> dict | None:
-    """Retorna o cache completo se existir e o algoritmo bater."""
-    if not cache_path.exists():
-        return None
-    try:
-        with open(cache_path, 'r', encoding='utf-8') as f:
-            data = json.load(f)
-        if data.get('algorithm') != algorithm:
-            print("Cache invalido: algoritmo diferente do configurado.")
-            return None
-        return data
-    except Exception as e:
-        print(f"Erro ao ler cache: {e}")
-        return None
+def connect(settings: Settings) -> SpotifyManager:
+    print("Connecting to Spotify...")
+    return SpotifyManager(
+        client_id=settings.client_id,
+        client_secret=settings.client_secret,
+        redirect_uri=settings.redirect_uri,
+    )
 
 
-def save_cache(cache_path: Path, algorithm: str, profiles_data: dict, snapshots: dict, artist_names: dict = None) -> None:
-    """Salva os perfis, snapshot_ids e nomes de artistas no cache."""
-    try:
-        data = {
-            'algorithm': algorithm,
-            'cached_at': datetime.now(timezone.utc).isoformat(),
-            'snapshots': snapshots,
-            'artist_names': artist_names or {},
-            'profiles': profiles_data,
-        }
-        with open(cache_path, 'w', encoding='utf-8') as f:
-            json.dump(data, f, ensure_ascii=False, indent=2)
-        print(f"Cache salvo em {cache_path}")
-    except Exception as e:
-        print(f"Aviso: nao foi possivel salvar cache: {e}")
-
-
-def atualiza_cache(profiles_data: dict, snapshots: dict, playlist_id: str, new_snapshot: str, track) -> None:
-    """Atualiza o cache localmente apos adicionar uma musica, sem chamadas extras a API."""
-    profile = profiles_data[playlist_id]
-    profile.setdefault('track_ids', []).append(track.id)
-    snapshots[playlist_id] = new_snapshot
-
-    total = profile.get('total_tracks', 0)
-    if total > 0 and track.id_artista:
-        new_total = total + 1
-        old_weight = profile['artista_weights'].get(track.id_artista, 0.0)
-        old_count  = round(old_weight * total)
-        new_weights = {a: w * total / new_total for a, w in profile['artista_weights'].items()}
-        new_weights[track.id_artista] = (old_count + 1) / new_total
-        profile['artista_weights'] = new_weights
-        profile['total_tracks']    = new_total
-
-
-def build_profiles_for(spotify: SpotifyManager, playlists: list, matcher_type: str) -> tuple[dict, dict]:
+def prompt_playlist_choice(candidates: list, fallback_id: str, cache: Cache,
+                           spotify: SpotifyManager, track: Track) -> tuple[str, str] | None:
     """
-    Constroi perfis para a lista de playlists fornecida.
-    Retorna (profiles_data, artist_names).
+    Shows the playlist menu and returns (playlist_id, playlist_name).
+    Returns None if the user cancels.
     """
-    if not playlists:
-        return {}, {}
-
-    analyzer = SpotifyPlaylistAnalyzer(spotify)
-
-    if matcher_type in ('artist_frequency', 'hybrid'):
-        profiles, artist_names = analyzer.build_all_profiles(playlists)
-        profiles_data = {
-            pl_id: {
-                'id': p.id,
-                'nome': p.nome,
-                'artista_weights': p.artista_weights,
-                'genre_weights': p.genre_weights,
-                'total_tracks': p.total_tracks,
-                'track_ids': p.track_ids,
-            }
-            for pl_id, p in profiles.items()
-        }
-        return profiles_data, artist_names
-
-    raise RuntimeError(f"Algoritmo desconhecido: '{matcher_type}'")
-
-
-def sync_profiles(spotify: SpotifyManager, all_playlists: list, cached_data: dict | None,
-                    matcher_type: str) -> tuple[dict, dict, dict]:
-    """
-    Atualiza apenas as playlists cujo snapshot_id mudou desde o ultimo cache.
-    Retorna (profiles_data, snapshots_atual, artist_names).
-    """
-    playlists = [p for p in all_playlists if p['id']]
-    current_snapshots = {p['id']: p['snapshot_id'] for p in playlists}
-
-    if cached_data is None:
-        print(f"Sem cache. Analisando {len(playlists)} playlists...")
-        profiles, artist_names = build_profiles_for(spotify, playlists, matcher_type)
-        return profiles, current_snapshots, artist_names
-
-    cached_snapshots = cached_data.get('snapshots', {})
-    cached_profiles  = cached_data.get('profiles', {})
-    cached_names     = cached_data.get('artist_names', {})
-
-    changed = [p for p in playlists if current_snapshots[p['id']] != cached_snapshots.get(p['id'])]
-    removed = [pid for pid in cached_profiles if pid not in current_snapshots]
-
-    if not changed and not removed:
-        cached_at = datetime.fromisoformat(cached_data['cached_at'])
-        age_hours = (datetime.now(timezone.utc) - cached_at).total_seconds() / 3600
-        print(f"Cache valido ({age_hours:.1f}h atras). Nenhuma playlist alterada.")
-        return cached_profiles, current_snapshots, cached_names
-
-    print(f"{len(changed)} playlist(s) alterada(s), {len(removed)} removida(s). Atualizando...")
-    for p in changed:
-        print(f"  ~ {p['name']}")
-    new_profiles, new_names = build_profiles_for(spotify, changed, matcher_type)
-
-    merged = {pid: prof for pid, prof in cached_profiles.items() if pid not in removed}
-    merged.update(new_profiles)
-    merged_names = {**cached_names, **new_names}
-    return merged, current_snapshots, merged_names
-
-
-def train_matcher(matcher_type: str, profiles_data: dict, spotify=None, artist_names: dict = None):
-    """Cria e treina o matcher com os dados de perfil."""
-    if matcher_type == 'artist_frequency':
-        profiles = {
-            pl_id: PlaylistProfile(
-                id=d['id'],
-                nome=d['nome'],
-                artista_weights=d['artista_weights'],
-                total_tracks=d.get('total_tracks', 0),
-            )
-            for pl_id, d in profiles_data.items()
-        }
-        matcher = ArtistFrequencyMatcher()
-        matcher.train(profiles)
-        return matcher
-
-    elif matcher_type == 'hybrid':
-        profiles = {
-            pl_id: PlaylistProfile(
-                id=d['id'],
-                nome=d['nome'],
-                artista_weights=d['artista_weights'],
-                genre_weights=d.get('genre_weights', {}),
-                total_tracks=d.get('total_tracks', 0),
-            )
-            for pl_id, d in profiles_data.items()
-        }
-        matcher = HybridMatcher(spotify)
-        matcher.train(profiles, artist_names=artist_names)
-        return matcher
-
-    raise RuntimeError(f"Algoritmo desconhecido: '{matcher_type}'")
-
-
-def prompt_playlist_choice(
-    candidates: list,
-    fallback_id: str,
-    profiles_data: dict,
-    spotify,
-    track,
-) -> tuple[str, str] | None:
-    """
-    Exibe o menu de escolha de playlist e retorna (playlist_id, playlist_name).
-    Retorna None se o usuário cancelar.
-    """
-    options = candidates
-    track_in_liked    = spotify.is_track_liked(track.id)
-    track_in_fallback = track.id in profiles_data.get(fallback_id, {}).get('track_ids', [])
-
-    liked_label    = "Músicas Curtidas (já está)" if track_in_liked    else "Músicas Curtidas"
-    fallback_label = "FALLBACK_PULSE (já está)"   if track_in_fallback else "FALLBACK_PULSE"
+    fallback = cache.profiles.get(fallback_id)
+    in_liked    = spotify.is_track_liked(track.id)
+    in_fallback = fallback is not None and track.id in fallback.track_ids
 
     print()
-    if options:
-        print("Onde adicionar?")
+    if candidates:
+        print("Where should it go?")
     else:
-        print("Nenhuma playlist compatível encontrada. Escolha manualmente:")
-    for i, r in enumerate(options, 1):
-        marker = "(recomendado)" if i == 1 else ""
-        print(f"  [{i}] {r.playlist_name}: {r.score:.2%} ({r.reason}) {marker}")
-    print(f"  [l] {liked_label}")
-    print(f"  [f] {fallback_label}")
-    print(f"  [n] Não adicionar")
+        print("No matching playlist found. Pick one manually:")
+    for i, r in enumerate(candidates, 1):
+        reason = f" ({r.reason})" if r.reason else ""
+        marker = " (recommended)" if i == 1 else ""
+        print(f"  [{i}] {r.playlist_name}: {r.score:.2%}{reason}{marker}")
+    print(f"  [l] Liked Songs{' (already there)' if in_liked else ''}")
+    print(f"  [f] FALLBACK_PULSE{' (already there)' if in_fallback else ''}")
+    print("  [n] Don't add")
     print()
 
-    valid_range = '/'.join(str(i) for i in range(1, len(options) + 1)) + '/l/f/n'
+    options = '/'.join([str(i) for i in range(1, len(candidates) + 1)] + ['l', 'f', 'n'])
+    default = '1' if candidates else 'f'  # with no suggestion, Enter goes to the fallback
     while True:
-        raw    = input(f"Escolha [{valid_range}] (Enter = 1): ").strip()
-        choice = raw if raw else '1'
+        choice = input(f"Choose [{options}] (Enter = {default}): ").strip() or default
 
         if choice == 'l':
-            return "liked", "Músicas Curtidas"
-        elif choice == 'f':
+            return "liked", "Liked Songs"
+        if choice == 'f':
             return fallback_id, "FALLBACK_PULSE"
-        elif choice == 'n':
+        if choice == 'n':
             return None
-        elif choice.isdigit() and 1 <= int(choice) <= len(options):
-            r = options[int(choice) - 1]
+        if choice.isdigit() and 1 <= int(choice) <= len(candidates):
+            r = candidates[int(choice) - 1]
             return r.playlist_id, r.playlist_name
-        else:
-            print("  Opção inválida, tente novamente.")
+        print("  Invalid option, try again.")
 
 
 def run_cache_refresh() -> dict:
-    """Reconstrói o cache de playlists sem verificar a música tocando."""
+    """Rebuilds the playlist cache without checking the current song."""
     t_start = time.time()
-
     try:
         config = load_config()
-    except RuntimeError as e:
+        settings = load_settings()
+    except SetupError as e:
         return {'success': False, 'error': str(e)}
 
-    matcher_type = config.get('algorithm', 'artist_frequency')
-    cache_file   = config.get('cache_file', '.pulse_cache.json')
-    cache_path   = ROOT / cache_file
+    spotify = connect(settings)
+    print("Fetching playlists...")
+    cache = sync_profiles(spotify, spotify.get_user_playlists(), None)  # None forces a full rebuild
+    if not cache.profiles:
+        return {'success': False, 'error': 'No profile was built'}
 
-    print("Conectando ao Spotify...")
-    spotify = SpotifyManager(
-        client_id=SPOTIFY_CLIENT_ID,
-        client_secret=SPOTIFY_CLIENT_SECRET,
-        redirect_uri=SPOTIFY_REDIRECT_URI
-    )
-
-    print("Buscando playlists...")
-    all_playlists = spotify.get_user_playlists()
-
-    profiles_data, snapshots, artist_names = sync_profiles(
-        spotify, all_playlists, None, matcher_type  # None força rebuild completo
-    )
-
-    if profiles_data:
-        save_cache(cache_path, matcher_type, profiles_data, snapshots, artist_names)
-        elapsed = round(time.time() - t_start, 1)
-        print(f"Cache atualizado: {len(profiles_data)} playlists [{elapsed}s | {spotify.api_calls} chamadas API]")
-        return {'success': True, 'playlists': len(profiles_data), 'elapsed': elapsed}
-
-    return {'success': False, 'error': 'Nenhum perfil gerado'}
+    save_cache(config.cache_path, cache)
+    elapsed = round(time.time() - t_start, 1)
+    print(f"Cache updated: {len(cache.profiles)} playlists [{elapsed}s | {spotify.api_calls} API calls]")
+    return {'success': True, 'playlists': len(cache.profiles), 'elapsed': elapsed}
 
 
 def run_pulse(mode: str = 'normal') -> dict:
     """
-    Executa o ciclo completo do Pulse.
+    Runs the whole Pulse cycle: current song, playlist sync, ranking, choice and add.
 
-    Retorna:
+    Returns:
         {'success': True,  'track': '...', 'playlist': '...', 'elapsed': 1.2}
-        {'success': False, 'error': 'mensagem'}
+        {'success': False, 'error': 'message'}
     """
     t_start = time.time()
-
     try:
         config = load_config()
-    except RuntimeError as e:
+        if not config.fallback_playlist_id:
+            raise SetupError(INVALID_FALLBACK)
+        settings = load_settings()
+    except SetupError as e:
         return {'success': False, 'error': str(e)}
+    fallback_id = config.fallback_playlist_id
 
-    matcher_type = config.get('algorithm', 'artist_frequency')
-    fallback_id  = config.get('fallback_playlist_id')
-    cache_file   = config.get('cache_file', '.pulse_cache.json')
-    cache_path   = ROOT / cache_file
+    spotify = connect(settings)
 
-    if not fallback_id:
-        return {'success': False, 'error': "'fallback_playlist_id' nao configurado"}
-
-    print("Conectando ao Spotify...")
-    spotify = SpotifyManager(
-        client_id=SPOTIFY_CLIENT_ID,
-        client_secret=SPOTIFY_CLIENT_SECRET,
-        redirect_uri=SPOTIFY_REDIRECT_URI
-    )
+    def stats() -> str:
+        return f"[{time.time() - t_start:.1f}s | {spotify.api_calls} API calls]"
 
     try:
         track = spotify.get_current_track()
-    except (spotipy.exceptions.SpotifyException, ConnectionError, TimeoutError) as e:
-        return {'success': False, 'error': f'Erro Spotify/conexão: {e}'}
-    except TimeoutError:
-        return {'success': False, 'error': 'Timeout ao conectar ao Spotify'}
+    except (spotipy.exceptions.SpotifyBaseException, OSError) as e:
+        # A Spotify app in development mode only lets in the accounts registered on it
+        if getattr(e, 'http_status', None) == 403:
+            return {'success': False, 'error': "Spotify refused access (403). If this account doesn't own "
+                                               "the Spotify app, add it under User Management in the "
+                                               "developer dashboard (see Troubleshooting in the README)."}
+        return {'success': False, 'error': f'Spotify/connection error: {e}'}
 
     if not track:
-        print("Nenhuma musica tocando no momento.")
-        elapsed = round(time.time() - t_start, 1)
-        print(f"[{elapsed}s | {spotify.api_calls} chamadas API]")
-        return {'success': False, 'error': 'Nenhuma música tocando'}
+        print(f"Nothing is playing right now. {stats()}")
+        return {'success': False, 'error': 'Nothing playing'}
 
-    print(f"Tocando: {track.nome} - {track.artista}")
+    print(f"Current song: {track.name} - {track.artist}")
+    if not track.id:
+        return {'success': False, 'error': "Local file: not in the Spotify catalog, it can't be added"}
 
-    print("Verificando playlists...")
-    all_playlists = spotify.get_user_playlists()
+    print("Checking playlists...")
+    cached = None if mode == 'refresh' else load_cache(config.cache_path)
+    cache = sync_profiles(spotify, spotify.get_user_playlists(), cached)
+    if cache.profiles:
+        save_cache(config.cache_path, cache)
 
-    cached_data   = None if (mode == 'refresh') else load_cache(cache_path, matcher_type)
-    profiles_data, snapshots, artist_names = sync_profiles(
-        spotify, all_playlists, cached_data, matcher_type
-    )
+    candidates = []
+    if cache.profiles:
+        matcher = PlaylistMatcher(cache.profiles, cache.artist_names)
+        candidates = matcher.top_matches(track, n=3)
+        if not candidates and settings.lastfm_api_key:
+            print("No direct match. Trying Last.fm...")
+            candidates = matcher.lastfm_fallback(track, settings.lastfm_api_key)
+            if candidates:
+                print("Match found through Last.fm.")
+    best = candidates[0] if candidates else None
 
-    if profiles_data:
-        save_cache(cache_path, matcher_type, profiles_data, snapshots, artist_names)
-
-    playlist_id   = None
-    playlist_name = None
-    candidates    = []
-    result        = None
-
-    if profiles_data:
-        matcher = train_matcher(matcher_type, profiles_data, spotify, artist_names=artist_names)
-
-        if matcher_type == 'hybrid' and hasattr(matcher, 'top_matches'):
-            candidates = matcher.top_matches(track, n=3)
-            if not candidates and LASTFM_API_KEY:
-                print("Nenhum match direto. Tentando Last.fm...")
-                candidates = matcher.lastfm_fallback(track, LASTFM_API_KEY)
-                if candidates:
-                    print("Match via Last.fm encontrado.")
-
-            result = candidates[0] if candidates else None
-        else:
-            result = matcher.match(track)
-
-        if result:
-            playlist_id   = result.playlist_id
-            playlist_name = result.playlist_name
-
-    # Aviso de duplicata
-    track_to_playlists: dict = {}
-    for pd in profiles_data.values():
-        for tid in pd.get('track_ids', []):
-            track_to_playlists.setdefault(tid, []).append(pd['nome'])
-
-    already_in = track_to_playlists.get(track.id, [])
+    already_in = [p.name for p in cache.profiles.values() if track.id in p.track_ids]
     if already_in:
-        print(f"\nAviso: esta música já está em: {', '.join(already_in)}")
+        print(f"\nWarning: this song is already in: {', '.join(already_in)}")
         if mode == 'auto':
-            elapsed = round(time.time() - t_start, 1)
-            print(f"Modo automático: não adicionando duplicata. [{elapsed}s | {spotify.api_calls} chamadas API]")
-            return {'success': False, 'error': 'Musica ja esta em uma playlist'}
-    if already_in and mode != 'dry-run':
-        raw = input("Continuar mesmo assim? [s/n] (Enter = n): ").strip().lower()
-        if raw != 's':
-            elapsed = round(time.time() - t_start, 1)
-            print(f"Cancelado. [{elapsed}s | {spotify.api_calls} chamadas API]")
-            return {'success': False, 'error': 'Cancelado - musica ja na playlist'}
-        print()
-
-    if mode == 'auto':
-        # Confirmação automática: só adiciona se o melhor match passar do score mínimo
-        min_score = config.get('auto_add_min_score', DEFAULT_AUTO_ADD_MIN_SCORE)
-        elapsed   = round(time.time() - t_start, 1)
-        if not result:
-            print(f"Sem candidatos para auto-add. [{elapsed}s | {spotify.api_calls} chamadas API]")
-            return {'success': False, 'error': 'Sem candidatos para auto-add'}
-        if result.score < min_score:
-            print(f"Score baixo ({result.score:.2%} < {min_score:.2%}). Não adicionando automaticamente. "
-                  f"[{elapsed}s | {spotify.api_calls} chamadas API]")
-            return {'success': False, 'error': 'Score abaixo do minimo para auto-add'}
+            print(f"Automatic mode: not adding a duplicate. {stats()}")
+            return {'success': False, 'error': 'Song is already in a playlist'}
+        if mode != 'dry-run':
+            if input("Continue anyway? [y/n] (Enter = n): ").strip().lower() != 'y':
+                print(f"Cancelled. {stats()}")
+                return {'success': False, 'error': 'Cancelled - song already in a playlist'}
+            print()
 
     if mode == 'dry-run':
-        # Nao vai adicionar nada, só mostra os candidatos e sai
-        if candidates:
-            for r in candidates:
-                print(f"  {r.playlist_name}: {r.score:.2%} ({r.reason})")
-        elif not result:
-            print("Nenhum candidato encontrado.")
+        if not candidates:
+            print("No candidate found.")
+        for r in candidates:
+            print(f"  {r.playlist_name}: {r.score:.2%} ({r.reason})")
+        destination = best.playlist_name if best else 'FALLBACK_PULSE'
+        print(f"\nWould be added to: {destination} {stats()}\n")
+        return {'success': True, 'track': f"{track.name} - {track.artist}", 'playlist': destination,
+                'elapsed': round(time.time() - t_start, 1)}
 
-        elapsed = round(time.time() - t_start, 1)
-        print(f"\nIria ser adicionado em: {playlist_name or 'FALLBACK_PULSE'} [{elapsed}s | {spotify.api_calls} chamadas API]\n")
-        return {
-            'success':  True,
-            'track':    f"{track.nome} - {track.artista}",
-            'playlist': playlist_name or 'FALLBACK_PULSE',
-            'elapsed':  elapsed,
-        }
-
-    # Confirmação interativa
-    if matcher_type == 'hybrid' and mode != 'auto':
-        choice = prompt_playlist_choice(candidates, fallback_id, profiles_data, spotify, track)
+    if mode == 'auto':
+        # Only adds without asking if the best match passes the minimum score
+        if not best:
+            print(f"No candidates for auto-add. {stats()}")
+            return {'success': False, 'error': 'No candidates for auto-add'}
+        if best.score < config.auto_add_min_score:
+            print(f"Low score ({best.score:.2%} < {config.auto_add_min_score:.2%}). "
+                  f"Not adding automatically. {stats()}")
+            return {'success': False, 'error': 'Score below the auto-add minimum'}
+        playlist_id, playlist_name = best.playlist_id, best.playlist_name
+    else:
+        choice = prompt_playlist_choice(candidates, fallback_id, cache, spotify, track)
         if choice is None:
-            elapsed = round(time.time() - t_start, 1)
-            print(f"Cancelado. [{elapsed}s | {spotify.api_calls} chamadas API]")
-            return {'success': False, 'error': 'Cancelado pelo usuario'}
+            print(f"Cancelled. {stats()}")
+            return {'success': False, 'error': 'Cancelled by user'}
         playlist_id, playlist_name = choice
         print()
 
-    if not playlist_id:
-        playlist_id   = fallback_id
-        playlist_name = "FALLBACK_PULSE"
-        print("Sem match. Usando FALLBACK_PULSE.")
-
     new_snapshot = spotify.add_track_to_playlist(playlist_id, track.id)
     if new_snapshot is None:
-        return {'success': False, 'error': 'Falha ao adicionar na playlist'}
+        return {'success': False, 'error': 'Failed to add to the playlist'}
 
-    if playlist_id in profiles_data and new_snapshot:
-        atualiza_cache(profiles_data, snapshots, playlist_id, new_snapshot, track)
-        save_cache(cache_path, matcher_type, profiles_data, snapshots, artist_names)
+    if playlist_id in cache.profiles and new_snapshot:
+        cache.record_add(playlist_id, track, new_snapshot)
+        save_cache(config.cache_path, cache)
 
-    elapsed = round(time.time() - t_start, 1)
-    print(f"Adicionado em: {playlist_name}")
-    print(f"[{elapsed}s | {spotify.api_calls} chamadas API]")
-
-    return {
-        'success':  True,
-        'track':    f"{track.nome} - {track.artista}",
-        'playlist': playlist_name,
-        'elapsed':  elapsed,
-    }
+    print(f"Added to: {playlist_name}")
+    print(stats())
+    return {'success': True, 'track': f"{track.name} - {track.artist}", 'playlist': playlist_name,
+            'elapsed': round(time.time() - t_start, 1)}
 
 
 def main():
@@ -450,16 +219,9 @@ def main():
     else:
         mode = 'normal'
 
-    if mode == 'cache-refresh':
-        result = run_cache_refresh()
-        if not result['success']:
-            print(f"Erro: {result.get('error')}")
-            sys.exit(1)
-        return
-
-    result = run_pulse(mode)
+    result = run_cache_refresh() if mode == 'cache-refresh' else run_pulse(mode)
     if not result['success']:
-        print(f"Erro: {result.get('error')}")
+        print(f"Error: {result.get('error')}")
         sys.exit(1)
 
 

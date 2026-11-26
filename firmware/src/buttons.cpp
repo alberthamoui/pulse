@@ -15,7 +15,7 @@ int8_t Buttons::update(Button& b, uint32_t now) {
   if (now - b.rawSince < cfg::DEBOUNCE_MS) return 0;
 
   if (b.raw == b.stable) {
-    // Solto e estável: libera uma supressão que ficou pendurada por ruído.
+    // Released and stable: clears a suppression left hanging by noise.
     if (!b.stable) b.suppressed = false;
     return 0;
   }

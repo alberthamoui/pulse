@@ -3,7 +3,7 @@
 namespace {
 
 const uint8_t* const FONT_BIG = u8g2_font_logisoso24_tr;
-const uint8_t* const FONT_TEXT = u8g2_font_6x10_tf;  // _tf: inclui Latin-1 (acentos)
+const uint8_t* const FONT_TEXT = u8g2_font_6x10_tf;  // _tf: includes Latin-1 (accents)
 const uint8_t* const FONT_SMALL = u8g2_font_5x7_tf;
 
 constexpr int WIDTH = 128;
@@ -11,7 +11,7 @@ constexpr int ROW_H = 10;
 constexpr int LIST_TOP = 21;
 constexpr int SCROLLBAR_W = 3;
 
-// Deslocamento do scroll: pausa no início, rola até o fim, pausa e recomeça.
+// Scroll offset: pauses at the start, scrolls to the end, pauses and starts over.
 int marqueeOffset(int overflow, uint32_t elapsedMs) {
   const uint32_t scrollMs = overflow * 1000UL / cfg::SCROLL_PX_PER_S;
   const uint32_t cycle = cfg::SCROLL_PAUSE_MS + scrollMs + cfg::SCROLL_PAUSE_MS;
@@ -28,7 +28,7 @@ void Display::begin() {
   u8g2_.setBusClock(cfg::I2C_CLOCK_HZ);
   u8g2_.begin();
   u8g2_.enableUTF8Print();
-  u8g2_.setFontMode(1);  // fundo transparente, para escrever sobre a linha invertida
+  u8g2_.setFontMode(1);  // transparent background, to write over the inverted row
 }
 
 bool Display::drawClipped(int x, int y, int w, int top, int bottom, const char* text,
@@ -69,7 +69,7 @@ bool Display::select(const NowPlaying& track, const std::vector<Candidate>& item
   bool animating = false;
   u8g2_.clearBuffer();
 
-  // Cabeçalho: música e artista rolam juntos, no mesmo relógio da seleção
+  // Header: song and artist scroll together, on the same clock as the selection
   u8g2_.setFont(FONT_TEXT);
   animating |= drawClipped(0, 8, WIDTH, 0, 10, track.name.c_str(), true, elapsedMs);
   u8g2_.setFont(FONT_SMALL);
@@ -92,13 +92,13 @@ bool Display::select(const NowPlaying& track, const std::vector<Candidate>& item
       u8g2_.setDrawColor(0);
     }
 
-    // Coluna da direita: "já" se a música já está na playlist, senão o peso
-    // (só nas sugestões; Fallback e Cancelar não têm peso). "~" marca o peso que
-    // veio dos artistas parecidos do Last.fm, que pode passar de 100%.
+    // Right column: "in" if the song is already in the playlist, otherwise the
+    // weight (only on suggestions; Fallback and Cancel have no weight). "~" marks
+    // a weight that came from the similar artists on Last.fm, which can exceed 100%.
     int nameW = rowW - 4;
     char tag[8] = "";
     if (item.hasTrack) {
-      snprintf(tag, sizeof(tag), "já");
+      snprintf(tag, sizeof(tag), "in");
     } else if (!manual && item.kind == Candidate::Kind::Playlist) {
       const char* prefix = item.similar ? "~" : "";
       const int p = min(999, static_cast<int>(item.weight * 100.0f + 0.5f));
