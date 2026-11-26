@@ -1,5 +1,7 @@
 """SpotifyManager: current song and playlist filter, without network."""
 
+import pytest
+
 from core.client import SpotifyManager
 
 
@@ -58,3 +60,16 @@ def test_no_session_podcast_or_ad_is_no_song():
     assert manager(FakeSp(playing=None)).get_current_track() is None
     assert manager(FakeSp(playing=playing(item=None, kind="episode"))).get_current_track() is None
     assert manager(FakeSp(playing=playing(item=None, kind="ad"))).get_current_track() is None
+
+
+def test_playlist_listing_errors_are_raised_not_cut_short():
+    # A failed second page must not look like a shorter list: the cache would drop the rest
+    class FailingNextPage(FakeSp):
+        def current_user_playlists(self, limit):
+            return {"items": [playlist("mine", "me")], "next": "page-2"}
+
+        def next(self, result):
+            raise ConnectionError("connection reset")
+
+    with pytest.raises(ConnectionError):
+        manager(FailingNextPage()).get_user_playlists()

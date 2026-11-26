@@ -186,3 +186,30 @@ def test_network_error_is_reported_not_raised(pulse, monkeypatch):
     result, _, _ = pulse()
 
     assert result["error"] == "Spotify/connection error: no route to host"
+
+
+def playlists_offline(monkeypatch):
+    def offline(self):
+        raise ConnectionError("connection reset")
+
+    monkeypatch.setattr(FakeSpotifyManager, "get_user_playlists", offline)
+
+
+def test_listing_error_keeps_the_saved_profiles(pulse, monkeypatch, tmp_path):
+    pulse(mode="dry-run")  # first run saves the cache with P1 and P2
+    saved = (tmp_path / "cache.json").read_text(encoding="utf-8")
+    playlists_offline(monkeypatch)
+
+    result, _, _ = pulse(mode="dry-run")
+
+    assert result["playlist"] == "P1"
+    assert (tmp_path / "cache.json").read_text(encoding="utf-8") == saved
+
+
+def test_listing_error_without_a_cache_is_reported(pulse, monkeypatch):
+    playlists_offline(monkeypatch)
+
+    result, spotify, _ = pulse(mode="dry-run")
+
+    assert result["error"] == "Couldn't list your playlists: connection reset"
+    assert spotify.added == []

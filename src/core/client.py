@@ -66,23 +66,23 @@ class SpotifyManager:
         """
         The user's own playlists and the collaborative ones they follow (the same
         ones the firmware considers), as dicts with 'id', 'name' and 'snapshot_id'.
+
+        Errors are raised, not swallowed: a list cut short by a failed page would
+        look like the missing playlists were deleted, and the cache would drop them.
         """
         playlists = []
-        try:
-            user_id = self.sp.current_user()['id']
-            result = self.sp.current_user_playlists(limit=50)
-            while result:
-                for p in result.get('items', []):
-                    mine = p.get('owner', {}).get('id') == user_id
-                    if mine or p.get('collaborative'):
-                        playlists.append({
-                            'id': p['id'],
-                            'name': p['name'],
-                            'snapshot_id': p.get('snapshot_id', ''),
-                        })
-                result = self.sp.next(result) if result.get('next') else None
-        except Exception as e:
-            print(f"Error getting playlists: {e}")
+        user_id = self.sp.current_user()['id']
+        result = self.sp.current_user_playlists(limit=50)
+        while result:
+            for p in result.get('items', []):
+                mine = p.get('owner', {}).get('id') == user_id
+                if mine or p.get('collaborative'):
+                    playlists.append({
+                        'id': p['id'],
+                        'name': p['name'],
+                        'snapshot_id': p.get('snapshot_id', ''),
+                    })
+            result = self.sp.next(result) if result.get('next') else None
         return playlists
 
     def is_track_liked(self, track_id: str) -> bool:

@@ -23,6 +23,9 @@ from core.matcher import PlaylistMatcher
 from core.models import Track
 from core.user_config import INVALID_FALLBACK, SetupError, Settings, load_config, load_settings
 
+# What a Spotify call can raise: API errors (spotipy) and network errors (requests, an OSError)
+SPOTIFY_ERRORS = (spotipy.exceptions.SpotifyBaseException, OSError)
+
 
 def connect(settings: Settings) -> SpotifyManager:
     print("Connecting to Spotify...")
@@ -85,7 +88,11 @@ def run_cache_refresh() -> dict:
 
     spotify = connect(settings)
     print("Fetching playlists...")
-    cache = sync_profiles(spotify, spotify.get_user_playlists(), None)  # None forces a full rebuild
+    try:
+        playlists = spotify.get_user_playlists()
+    except SPOTIFY_ERRORS as e:
+        return {'success': False, 'error': f"Couldn't list your playlists: {e}"}
+    cache = sync_profiles(spotify, playlists, None)  # None forces a full rebuild
     if not cache.profiles:
         return {'success': False, 'error': 'No profile was built'}
 
@@ -120,7 +127,7 @@ def run_pulse(mode: str = 'normal') -> dict:
 
     try:
         track = spotify.get_current_track()
-    except (spotipy.exceptions.SpotifyBaseException, OSError) as e:
+    except SPOTIFY_ERRORS as e:
         # A Spotify app in development mode only lets in the accounts registered on it
         if getattr(e, 'http_status', None) == 403:
             return {'success': False, 'error': "Spotify refused access (403). If this account doesn't own "
@@ -138,9 +145,18 @@ def run_pulse(mode: str = 'normal') -> dict:
 
     print("Checking playlists...")
     cached = None if mode == 'refresh' else load_cache(config.cache_path)
-    cache = sync_profiles(spotify, spotify.get_user_playlists(), cached)
-    if cache.profiles:
-        save_cache(config.cache_path, cache)
+    try:
+        playlists = spotify.get_user_playlists()
+    except SPOTIFY_ERRORS as e:
+        # The saved profiles are still good for ranking; without them there's nothing to rank
+        if cached is None:
+            return {'success': False, 'error': f"Couldn't list your playlists: {e}"}
+        print(f"Couldn't list your playlists ({e}). Using the saved profiles.")
+        cache = cached
+    else:
+        cache = sync_profiles(spotify, playlists, cached)
+        if cache.profiles:
+            save_cache(config.cache_path, cache)
 
     candidates = []
     if cache.profiles:
