@@ -4,6 +4,8 @@ A standalone version of Pulse: an ESP32 with two buttons and a small OLED screen
 
 ![Pulse on a breadboard](../docs/device.jpeg)
 
+To try it before building one, the [simulator](../simulator/README.md) runs this firmware in the browser.
+
 ## Hardware
 
 | Part | Notes |

@@ -1,0 +1,240 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Pulse simulator</title>
+  <meta name="description" content="Try the Pulse device in your browser: the real firmware screens, buttons and ranking, with a simulated Spotify. No ESP32 needed.">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%2307090b'/%3E%3Cpath d='M4 17h6l3-8 5 15 3-7h7' fill='none' stroke='%235ee8ff' stroke-width='2.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=Space+Grotesk:wght@500;700&display=swap">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <header class="top">
+    <div class="brand">
+      <svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true"><path d="M4 17h6l3-8 5 15 3-7h7"/></svg>
+      <div>
+        <h1>Pulse simulator</h1>
+        <p class="lede">The device's firmware running in your browser: same screens, buttons and ranking, with a simulated Spotify. No ESP32 needed.</p>
+      </div>
+    </div>
+    <nav class="models" role="tablist" aria-label="Device model">
+      <button role="tab" id="tab-proto" aria-controls="stage" data-model="proto">Prototype<span>breadboard</span></button>
+      <button role="tab" id="tab-product" aria-controls="stage" data-model="product">Final product<span>3D-printed case</span></button>
+    </nav>
+  </header>
+
+  <main class="layout">
+    <section class="device-col" aria-label="Device">
+      <div class="stage" id="stage" role="tabpanel">
+
+        <!-- Prototype: the breadboard from docs/device.jpeg -->
+        <div class="model proto" id="model-proto">
+          <div class="proto-inner">
+          <svg class="proto-art" viewBox="0 -70 1000 680" aria-hidden="true">
+            <defs>
+              <pattern id="holes" width="15" height="15" patternUnits="userSpaceOnUse">
+                <rect x="5" y="5" width="5" height="5" rx="1" fill="#b9b5aa"/>
+              </pattern>
+              <pattern id="pins" width="17" height="10" patternUnits="userSpaceOnUse">
+                <rect x="4" y="1" width="9" height="8" fill="#141414"/><rect x="6.5" y="3" width="4" height="4" fill="#d8b45c"/>
+              </pattern>
+              <linearGradient id="shield" x1="0" y1="0" x2="1" y2="1">
+                <stop offset="0" stop-color="#d9dcdf"/><stop offset=".55" stop-color="#a9aeb3"/><stop offset="1" stop-color="#868c92"/>
+              </linearGradient>
+              <radialGradient id="led" r=".5"><stop offset="0" stop-color="#ff5a4e"/><stop offset=".4" stop-color="#ff2a1e" stop-opacity=".9"/><stop offset="1" stop-color="#ff2a1e" stop-opacity="0"/></radialGradient>
+              <filter id="soft" x="-10%" y="-10%" width="120%" height="130%"><feDropShadow dx="0" dy="6" stdDeviation="6" flood-color="#000" flood-opacity=".45"/></filter>
+            </defs>
+
+            <!-- USB cable -->
+            <path d="M960 190 C 990 190 1000 170 1040 160" stroke="#d9d2c3" stroke-width="13" fill="none" stroke-linecap="round"/>
+
+            <!-- Breadboard -->
+            <g filter="url(#soft)">
+              <rect x="60" y="40" width="925" height="290" rx="8" fill="#efece4"/>
+              <rect x="60" y="40" width="925" height="290" rx="8" fill="none" stroke="#d9d4c8"/>
+            </g>
+            <line x1="80" y1="52" x2="965" y2="52" stroke="#3b6fd8" stroke-width="2"/>
+            <line x1="80" y1="88" x2="965" y2="88" stroke="#d8473b" stroke-width="2"/>
+            <rect x="80" y="58" width="885" height="25" fill="url(#holes)"/>
+            <rect x="80" y="105" width="885" height="78" fill="url(#holes)"/>
+            <rect x="60" y="187" width="925" height="12" fill="#e2ded3"/>
+            <rect x="80" y="203" width="885" height="78" fill="url(#holes)"/>
+            <rect x="80" y="288" width="885" height="25" fill="url(#holes)"/>
+            <line x1="80" y1="284" x2="965" y2="284" stroke="#3b6fd8" stroke-width="2"/>
+            <line x1="80" y1="318" x2="965" y2="318" stroke="#d8473b" stroke-width="2"/>
+
+            <!-- Short jumpers on the board -->
+            <path d="M215 88 v28" stroke="#d8473b" stroke-width="5" stroke-linecap="round"/>
+            <path d="M345 52 v62" stroke="#2c9a4a" stroke-width="5" stroke-linecap="round"/>
+            <path d="M640 88 v30" stroke="#d8473b" stroke-width="5" stroke-linecap="round"/>
+            <path d="M470 236 v54" stroke="#e6c229" stroke-width="5" stroke-linecap="round"/>
+            <path d="M590 236 v54" stroke="#e6c229" stroke-width="5" stroke-linecap="round"/>
+            <path d="M700 270 v20" stroke="#e6c229" stroke-width="5" stroke-linecap="round"/>
+
+            <!-- ESP32 DevKit -->
+            <g filter="url(#soft)">
+              <rect x="705" y="96" width="250" height="186" rx="9" fill="#17181b"/>
+            </g>
+            <rect x="715" y="100" width="230" height="10" fill="url(#pins)"/>
+            <rect x="715" y="268" width="230" height="10" fill="url(#pins)"/>
+            <rect x="735" y="128" width="112" height="124" rx="3" fill="#232427"/>
+            <rect x="745" y="136" width="92" height="96" rx="2" fill="url(#shield)"/>
+            <text x="791" y="172" class="silk dark" text-anchor="middle">ESP-WROOM-32</text>
+            <text x="791" y="190" class="silk dark small" text-anchor="middle">Wi-Fi · BT</text>
+            <rect x="870" y="160" width="26" height="40" rx="3" fill="#2a2b2f"/>
+            <rect x="905" y="128" width="18" height="12" rx="2" fill="#9ea3a8"/>
+            <rect x="905" y="238" width="18" height="12" rx="2" fill="#9ea3a8"/>
+            <text x="914" y="124" class="silk small" text-anchor="middle">EN</text>
+            <text x="914" y="262" class="silk small" text-anchor="middle">BOOT</text>
+            <rect x="940" y="174" width="26" height="32" rx="5" fill="#b8bcc0"/>
+            <circle class="power-led" cx="872" cy="222" r="16" fill="url(#led)"/>
+            <circle class="power-led" cx="872" cy="222" r="3.5" fill="#ff6b5e"/>
+
+            <!-- Long wires: OLED and buttons to the ESP32 -->
+            <path d="M188 322 C 150 160 220 -20 520 -30 S 850 30 760 104" stroke="#e8c42a" stroke-width="5.5" fill="none" stroke-linecap="round"/>
+            <path d="M216 322 C 190 170 260 0 520 -10 S 820 60 778 104" stroke="#2848c8" stroke-width="5.5" fill="none" stroke-linecap="round"/>
+            <path d="M470 116 C 440 -30 700 -60 828 104" stroke="#f07a1e" stroke-width="5.5" fill="none" stroke-linecap="round"/>
+            <path d="M590 116 C 600 -10 760 -40 846 104" stroke="#7d4fc4" stroke-width="5.5" fill="none" stroke-linecap="round"/>
+            <path d="M160 322 C 150 280 120 250 120 210" stroke="#d8473b" stroke-width="5.5" fill="none" stroke-linecap="round"/>
+            <path d="M244 322 C 250 280 270 250 270 212" stroke="#1d1d1d" stroke-width="5.5" fill="none" stroke-linecap="round"/>
+
+            <!-- Buttons (the caps are interactive) -->
+            <g class="hw-button" data-pin="nav" role="button" tabindex="0" aria-label="Navigate button">
+              <rect x="436" y="156" width="68" height="68" rx="6" fill="#1b1b1d"/>
+              <circle cx="444" cy="164" r="3" fill="#3a3a3d"/><circle cx="496" cy="164" r="3" fill="#3a3a3d"/>
+              <circle cx="444" cy="216" r="3" fill="#3a3a3d"/><circle cx="496" cy="216" r="3" fill="#3a3a3d"/>
+              <g class="cap"><circle cx="470" cy="190" r="27" fill="#17923f"/><circle cx="470" cy="186" r="25" fill="#22a650"/><ellipse cx="462" cy="178" rx="11" ry="6" fill="#fff" opacity=".18"/></g>
+            </g>
+            <g class="hw-button" data-pin="ok" role="button" tabindex="0" aria-label="Confirm button">
+              <rect x="556" y="156" width="68" height="68" rx="6" fill="#1b1b1d"/>
+              <circle cx="564" cy="164" r="3" fill="#3a3a3d"/><circle cx="616" cy="164" r="3" fill="#3a3a3d"/>
+              <circle cx="564" cy="216" r="3" fill="#3a3a3d"/><circle cx="616" cy="216" r="3" fill="#3a3a3d"/>
+              <g class="cap"><circle cx="590" cy="190" r="27" fill="#c9c9c4"/><circle cx="590" cy="186" r="25" fill="#f3f2ee"/><ellipse cx="582" cy="178" rx="11" ry="6" fill="#fff" opacity=".5"/></g>
+            </g>
+            <text x="470" y="250" class="hint-label" text-anchor="middle">NAVIGATE</text>
+            <text x="590" y="250" class="hint-label" text-anchor="middle">CONFIRM</text>
+
+            <!-- OLED module (enlarged so the screen is readable) -->
+            <g filter="url(#soft)">
+              <rect x="30" y="300" width="400" height="290" rx="10" fill="#1d4fa8"/>
+            </g>
+            <circle cx="50" cy="320" r="9" fill="#e9e6dc"/><circle cx="410" cy="320" r="9" fill="#e9e6dc"/>
+            <circle cx="50" cy="570" r="9" fill="#e9e6dc"/><circle cx="410" cy="570" r="9" fill="#e9e6dc"/>
+            <rect x="170" y="306" width="88" height="12" fill="url(#pins)"/>
+            <text x="214" y="334" class="silk small" text-anchor="middle">VCC GND SCL SDA</text>
+            <rect x="48" y="344" width="364" height="200" rx="4" fill="#06080a"/>
+            <rect x="48" y="544" width="364" height="22" fill="#d9dadc"/>
+            <rect x="160" y="566" width="140" height="10" fill="#c3c6ca"/>
+          </svg>
+          <canvas class="oled" id="oled-proto" width="512" height="256" aria-label="OLED screen"></canvas>
+          </div>
+        </div>
+
+        <!-- Final product: a 3D-printed wedge, drag to turn it -->
+        <div class="model product" id="model-product">
+          <div class="scene" id="scene">
+            <div class="box" id="box">
+              <div class="face back">
+                <div class="vents"><i></i><i></i><i></i><i></i><i></i></div>
+                <div class="usb" title="USB-C power"></div>
+                <div class="engrave">PULSE · ESP32 · 2.4 GHz</div>
+              </div>
+              <div class="face bottom"><div class="feet"><i></i><i></i><i></i><i></i></div></div>
+              <div class="face top"><span class="logo">pulse</span></div>
+              <div class="face side left"></div>
+              <div class="face side right"></div>
+              <div class="face front">
+                <div class="bezel"><canvas class="oled" id="oled-product" width="512" height="256" aria-label="OLED screen"></canvas></div>
+                <div class="controls">
+                  <button class="cap-btn nav" data-pin="nav" aria-label="Navigate button"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg></button>
+                  <button class="cap-btn ok" data-pin="ok" aria-label="Confirm button"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg></button>
+                </div>
+              </div>
+            </div>
+            <div class="floor-shadow"></div>
+          </div>
+          <div class="product-bar">
+            <div class="finishes" role="radiogroup" aria-label="Filament">
+              <button role="radio" data-finish="graphite" aria-label="Graphite"><i></i></button>
+              <button role="radio" data-finish="bone" aria-label="Bone"><i></i></button>
+              <button role="radio" data-finish="sage" aria-label="Sage"><i></i></button>
+            </div>
+            <p class="spec">Concept · about 84 × 40 × 40 mm · PLA, 0.2 mm layers · USB-C · drag to turn it</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="under-stage">
+        <ol class="states" aria-label="Firmware state">
+          <li data-state="Idle">Idle</li><li data-state="Loading">Loading</li><li data-state="Select">Select</li><li data-state="Done">Done</li><li data-state="Error">Error</li>
+        </ol>
+        <p class="keys"><kbd>N</kbd> or <kbd>↓</kbd> Navigate · <kbd>O</kbd> or <kbd>Enter</kbd> Confirm · hold Confirm 3 s on <b>PULSE</b> to re-sync</p>
+      </div>
+
+      <details class="serial" open>
+        <summary>Serial monitor <span>115200 baud</span></summary>
+        <div class="serial-tools"><button type="button" id="serial-clear">Clear</button></div>
+        <pre id="serial" aria-live="off"></pre>
+      </details>
+    </section>
+
+    <aside class="panel" aria-label="Simulated Spotify">
+      <section class="card">
+        <h2>Playing on Spotify</h2>
+        <p class="sub">Pick a song, then press Navigate or Confirm on the device.</p>
+        <div class="songs" id="songs" role="radiogroup" aria-label="Song playing"></div>
+      </section>
+
+      <section class="card">
+        <h2>Conditions</h2>
+        <div class="row">
+          <span>Wi-Fi</span>
+          <label class="switch"><input type="checkbox" id="opt-wifi"><i></i></label>
+        </div>
+        <div class="row">
+          <span>Spotify API</span>
+          <div class="seg" id="opt-api" role="radiogroup" aria-label="Spotify API">
+            <button role="radio" data-value="ok">OK</button>
+            <button role="radio" data-value="rate">Rate limited</button>
+            <button role="radio" data-value="auth">Token revoked</button>
+          </div>
+        </div>
+        <div class="row">
+          <span>Last.fm key <small>secrets.h</small></span>
+          <label class="switch"><input type="checkbox" id="opt-lastfm"><i></i></label>
+        </div>
+        <div class="row">
+          <span>Fallback playlist <small>secrets.h</small></span>
+          <label class="switch"><input type="checkbox" id="opt-fallback"><i></i></label>
+        </div>
+      </section>
+
+      <section class="card">
+        <h2>Your playlists</h2>
+        <p class="sub">What Spotify has, and whether the profile on the device's flash is up to date.</p>
+        <ul class="playlists" id="playlists"></ul>
+        <div class="actions">
+          <button type="button" id="act-edit">Edit one from your phone</button>
+          <button type="button" id="act-restart">Restart device</button>
+          <button type="button" id="act-reset" class="quiet">Factory reset</button>
+        </div>
+      </section>
+    </aside>
+  </main>
+
+  <footer class="foot">
+    <p>Ported from <code>firmware/src</code>: <code>buttons.cpp</code>, <code>display.cpp</code>, <code>state_machine.cpp</code>, <code>profiles.cpp</code>, <code>spotify_backend.cpp</code>. The text is drawn with U8g2's own font data. Spotify and Last.fm are simulated with example playlists.</p>
+  </footer>
+
+  <script src="js/fonts.js"></script>
+  <script src="js/config.js"></script>
+  <script src="js/u8g2.js"></script>
+  <script src="js/library.js"></script>
+  <script src="js/cloud.js"></script>
+  <script src="js/firmware.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>

@@ -11,6 +11,8 @@
 
 ▶ [Watch the 21-second demo](docs/demo.mp4). It's an animation: the device screens are drawn with the firmware's own fonts and layout, the terminal shows the CLI's real output format, and the playlists are examples.
 
+**No hardware? [Try the simulator](simulator/README.md).** It runs the firmware in the browser with a simulated Spotify: pick a song, press the buttons, and see the same screens and Serial log, as the breadboard prototype or as a concept for the 3D-printed final product. Open `simulator/index.html`; there's nothing to install.
+
 I have around 50 playlists. Every time something good came on, I had to stop, remember what each playlist was about and decide where the song went.
 
 Pulse does that thinking for me. It looks at the song playing on Spotify, compares it with every playlist I've already built and suggests the 3 where it fits best. It runs as a Python CLI and as a standalone ESP32 gadget with two buttons and a small OLED screen, which talks to Spotify on its own: once it's set up, there's no computer, server or phone app involved. When the first suggestion is right, that's two button presses.
@@ -101,10 +103,13 @@ pulse/
 │   └── constants.py             tuning knobs: co-occurrence weight, smoothing, timeouts
 ├── config/                      your settings.py and config.json (out of git) and their .example templates
 ├── tests/                       pytest, no network: one test file per module, plus the CLI flow
-├── tools/get_refresh_token.py   generates the refresh token the ESP32 uses
+├── tools/
+│   ├── get_refresh_token.py     generates the refresh token the ESP32 uses
+│   └── extract_u8g2_fonts.py    copies the OLED fonts into the simulator
 ├── firmware/                    the ESP32 device (C++/PlatformIO)
 │   ├── include/                 config.h (pins, timings, limits) and secrets.h (credentials, out of git)
 │   └── src/                     boot, state machine, display, buttons, Spotify client, profiles, Last.fm
+├── simulator/                   the firmware ported to the browser, with a simulated Spotify
 └── docs/                        ARCHITECTURE.md (internals in depth) and the photos
 ```
 
