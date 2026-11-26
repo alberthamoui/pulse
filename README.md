@@ -182,7 +182,7 @@ The first run opens the browser to log in to Spotify and reads all your playlist
 
 ## Tests
 
-68 tests cover the ranking, the cache sync, the setup checks, the Spotify and Last.fm clients and the CLI flow, all with fakes and no network:
+71 tests cover the ranking, the cache sync, the setup checks, the Spotify and Last.fm clients, the CLI flow and whether the simulator still matches the firmware, all with fakes and no network:
 
 ```bash
 pip install -r requirements-dev.txt
