@@ -18,6 +18,7 @@ python main.py [--auto | --dry-run | --refresh | --cache-refresh]
         │       → no song, or a local file: stops
         │
         ├─ 3. Fetches the user's own playlists and the collaborative ones
+        │       → listing fails: ranks with the saved profiles (no cache: stops)
         │
         ├─ 4. Syncs the cache (see the Cache section)
         │       → --refresh: rebuilds everything
@@ -177,7 +178,7 @@ If Last.fm doesn't solve it either: the menu has no suggestions and Enter picks 
 
 ### `client.py` — SpotifyManager
 - `get_current_track()` → current Track, playing or paused; `None` for no session, podcasts and ads
-- `get_user_playlists()` → paginated list (the user's own playlists and the collaborative ones, as in the firmware)
+- `get_user_playlists()` → paginated list (the user's own playlists and the collaborative ones, as in the firmware); errors are raised, so a list cut short never reaches the cache
 - `is_track_liked()` and `add_track_to_playlist()` → the latter returns the new `snapshot_id`
 - `api_calls` counter
 

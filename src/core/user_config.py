@@ -74,10 +74,16 @@ def load_config(path: Path = CONFIG_PATH) -> Config:
     except json.JSONDecodeError as e:
         raise SetupError(f"config/config.json is invalid: {e}")
 
+    min_score = data.get('auto_add_min_score', DEFAULT_AUTO_ADD_MIN_SCORE)
+    # bool is an int in Python, but true/false here is a mistake, not a score
+    if isinstance(min_score, bool) or not isinstance(min_score, (int, float)):
+        raise SetupError(f"'auto_add_min_score' in config/config.json must be a number, like "
+                         f"{DEFAULT_AUTO_ADD_MIN_SCORE}, not {json.dumps(min_score)}.")
+
     return Config(
         fallback_playlist_id=parse_playlist_id(data.get('fallback_playlist_id')),
         cache_path=ROOT / data.get('cache_file', DEFAULT_CACHE_FILE),
-        auto_add_min_score=data.get('auto_add_min_score', DEFAULT_AUTO_ADD_MIN_SCORE),
+        auto_add_min_score=min_score,
     )
 
 

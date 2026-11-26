@@ -67,3 +67,12 @@ def test_missing_or_invalid_config_is_a_setup_error(tmp_path):
     broken.write_text("{not json")
     with pytest.raises(SetupError, match="invalid"):
         load_config(broken)
+
+
+@pytest.mark.parametrize("value", ["0.5", True, None])
+def test_auto_add_min_score_must_be_a_number(tmp_path, value):
+    path = tmp_path / "config.json"
+    path.write_text(json.dumps({"fallback_playlist_id": PLAYLIST, "auto_add_min_score": value}))
+
+    with pytest.raises(SetupError, match="must be a number"):
+        load_config(path)
