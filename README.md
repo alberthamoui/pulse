@@ -184,7 +184,7 @@ pip install -r requirements-dev.txt
 pytest
 ```
 
-CI runs them with `ruff` on Python 3.10 and 3.12 and also builds both firmware environments.
+CI runs them with `ruff` on Python 3.10 and 3.14 and also builds both firmware environments.
 
 ## Limitations
 
