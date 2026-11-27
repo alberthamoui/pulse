@@ -55,7 +55,7 @@ You need [PlatformIO](https://platformio.org/) and the same Spotify app used by 
 
 The suggestion list shows the song and artist at the top and up to 5 playlists with the share of that artist in each one. Options that already contain the song are marked `in`. `Fallback` and `Cancel` are always in the list. With no input for 30 s the screen goes back to idle without adding anything.
 
-If the artist isn't in any playlist, the suggestions come from Last.fm instead (top 3, marked with `~`). If that doesn't find anything either, all playlists are listed in alphabetical order.
+If the artist isn't in any playlist, the suggestions come from Last.fm instead (top 3, marked with `~`, each with its share of the total similar-artist score). If that doesn't find anything either, all playlists are listed in alphabetical order.
 
 Errors show for 3 s: no Wi-Fi, nothing playing, local file (not in the Spotify catalog, can't be added), API busy (rate limited) and `Reauthorize` when the refresh token expired or was revoked (run `get_refresh_token.py` again).
 

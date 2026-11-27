@@ -94,7 +94,7 @@ bool Display::select(const NowPlaying& track, const std::vector<Candidate>& item
 
     // Right column: "in" if the song is already in the playlist, otherwise the
     // weight (only on suggestions; Fallback and Cancel have no weight). "~" marks
-    // a weight that came from the similar artists on Last.fm, which can exceed 100%.
+    // a weight that came from the similar artists on Last.fm (a share of their total score).
     int nameW = rowW - 4;
     char tag[8] = "";
     if (item.hasTrack) {

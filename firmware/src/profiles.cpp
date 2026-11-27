@@ -543,6 +543,13 @@ void Profiles::similarWeights(const std::vector<SimilarArtist>& similar,
     scores[h.playlist] += similar[h.artist].match * tf * idf;
   }
 
+  // The raw score has no upper bound, so the device shows each playlist's share of
+  // the total: still ranked the same, never above 100%.
+  float sum = 0.0f;
+  for (float s : scores) {
+    if (s > 0.0f) sum += s;
+  }
+
   for (size_t i = 0; i < playlists_.size(); ++i) {
     if (scores[i] <= 0.0f) continue;
     String via;
@@ -552,15 +559,16 @@ void Profiles::similarWeights(const std::vector<SimilarArtist>& similar,
       if (shown++ > 0) via += ", ";
       via += similar[h.artist].name + " (" + String(similar[h.artist].match, 2) + ")";
     }
-    Serial.printf("[lastfm] '%s': %.2f%% via %s\n", playlists_[i].name.c_str(),
-                  scores[i] * 100.0f, via.c_str());
+    Serial.printf("[lastfm] '%s': %.2f%% (score %.4f) via %s\n", playlists_[i].name.c_str(),
+                  scores[i] / sum * 100.0f, scores[i], via.c_str());
   }
 
   for (Candidate& c : out) {
     auto p = std::find_if(playlists_.begin(), playlists_.end(),
                           [&](const Playlist& pl) { return pl.id == c.playlistId; });
     if (p == playlists_.end()) continue;
-    c.weight = scores[p - playlists_.begin()];
+    const float score = scores[p - playlists_.begin()];
+    c.weight = score > 0.0f ? score / sum : 0.0f;
     c.similar = true;
   }
 }
