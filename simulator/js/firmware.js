@@ -629,17 +629,22 @@
         scores[h.playlist] = f32(scores[h.playlist] + f32(f32(similar[h.artist].match * tf) * idf));
       }
 
+      let sum = 0;
+      for (const s of scores) {
+        if (s > 0) sum = f32(sum + s);
+      }
+
       this.playlists.forEach((p, i) => {
         if (scores[i] <= 0) return;
         const via = hits.filter((h) => h.playlist === i).slice(0, 3)
           .map((h) => `${similar[h.artist].name} (${similar[h.artist].match.toFixed(2)})`).join(', ');
-        this.dev.log(`[lastfm] '${p.name}': ${(scores[i] * 100).toFixed(2)}% via ${via}`);
+        this.dev.log(`[lastfm] '${p.name}': ${(f32(scores[i] / sum) * 100).toFixed(2)}% (score ${scores[i].toFixed(4)}) via ${via}`);
       });
 
       for (const c of out) {
         const i = this.playlists.findIndex((pl) => pl.id === c.playlistId);
         if (i < 0) continue;
-        c.weight = scores[i];
+        c.weight = scores[i] > 0 ? f32(scores[i] / sum) : 0;
         c.similar = true;
       }
     }
